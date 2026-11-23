@@ -1,0 +1,76 @@
+# IAS Provider Configuration
+#
+# Prerequisites:
+# 1. Have an IAS tenant (request at https://tenants.ias.only.sap/#/requests/)
+# 2. Create a technical user in IAS Admin Console:
+#    - Users & Authorizations > Administrators > Add > System
+#    - Authorize to manage applications
+#    - Create access key (Client ID + Secret)
+#
+# Create secret out-of-band:
+#   kubectl create secret generic ias-provider-credentials \
+#     --from-literal=url=https://<tenant>.accounts.ondemand.com \
+#     --from-literal=username=<client-id> \
+#     --from-literal=password=<client-secret>
+#
+---
+apiVersion: ias.btp.orchestrate.cloud.sap/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: ias-providerconfig
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: default
+      name: ias-provider-credentials
+      key: credentials
+---
+# IAS Application for Gardener Shoot OIDC Authentication
+#
+# After creation, get the Client ID from IAS UI:
+#   Applications > shoot-oidc-app-dev > Application APIs > Client Authentication > Client ID
+#
+apiVersion: ias.btp.orchestrate.cloud.sap/v1alpha1
+kind: Application
+metadata:
+  name: shoot-oidc-app-dev
+spec:
+  forProvider:
+    description: "OIDC Application for ODG Dev Gardener Shoots"
+    branding:
+      displayName: ODG-Dev-Shoot-OIDC
+    authentication:
+      homeUrl: https://dashboard.gardener.cloud.sap
+      ssoType: openIdConnect
+      subjectNameIdentifier: email
+      fallbackSubjectNameIdentifier: uid
+      riskBasedAuthentication:
+        defaultAction:
+          - allow
+        rules:
+          - actions:
+              - allow
+            authMethod: token
+            userType: employee
+      assertionAttributes:
+        - assertionAttributeName: first_name
+          userAttributeName: firstName
+        - assertionAttributeName: last_name
+          userAttributeName: lastName
+        - assertionAttributeName: mail
+          userAttributeName: mail
+        - assertionAttributeName: groups
+          userAttributeName: groups
+      restApiAuthentication:
+        allowPublicClientFlows: true
+      openIdConnectConfiguration:
+        restrictedGrantTypes:
+          - authorizationCode
+          - authorizationCodePkceS256
+          - refreshToken
+        redirectUris:
+          - http://localhost:8000
+          - http://localhost:8000/
+  providerConfigRef:
+    name: ias-providerconfig

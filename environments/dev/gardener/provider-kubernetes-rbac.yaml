@@ -1,0 +1,41 @@
+# RBAC for Kubernetes Provider to read BTP resources
+#
+# The Crossplane Kubernetes provider creates Objects (like Gardener Shoots) and can
+# inject values from other Kubernetes resources via `spec.references`. When referencing
+# BTP resources (e.g., Subaccount to get tenantID), the provider's service account
+# needs permission to read those resources.
+#
+# Without this RBAC, the shoot Object fails with:
+#   "subaccounts.account.btp.sap.crossplane.io is forbidden: User
+#    system:serviceaccount:crossplane-system:provider-kubernetes cannot get resource"
+#
+# Used by:
+#   - shoots/dummy.yaml: references Subaccount to inject tenantID for audit logging
+#
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: provider-kubernetes-btp-reader
+rules:
+  - apiGroups:
+      - account.btp.sap.crossplane.io
+    resources:
+      - subaccounts
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: provider-kubernetes-btp-reader
+subjects:
+  - kind: ServiceAccount
+    name: provider-kubernetes
+    namespace: crossplane-system
+roleRef:
+  kind: ClusterRole
+  name: provider-kubernetes-btp-reader
+  apiGroup: rbac.authorization.k8s.io

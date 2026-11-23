@@ -1,0 +1,29 @@
+# BTP Account Provider Configuration
+#
+# Configures the Crossplane BTP provider with credentials to manage BTP resources.
+#
+# Required secrets (out-of-band):
+#   - cis-provider-secret: CIS credentials for BTP API access
+#   - sa-provider-secret: Service account credentials
+#
+---
+apiVersion: btp.sap.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: account-provider-config
+spec:
+  cisCredentials:
+    secretRef:
+      key: data
+      name: cis-provider-secret
+      namespace: default
+    source: Secret
+  cliServerUrl: https://canary.cli.btp.int.sap
+  globalAccount: 8b7fcd40-9784-4c4c-bcd6-f1a7c7ce9566
+  serviceAccountSecret:
+    secretRef:
+      key: credentials
+      name: sa-provider-secret
+      namespace: default
+    source: Secret
+---

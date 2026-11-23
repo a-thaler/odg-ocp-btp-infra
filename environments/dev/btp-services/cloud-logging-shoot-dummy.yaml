@@ -1,0 +1,25 @@
+# Cloud Logging Binding for Shoot Dummy
+#
+# Creates a ServiceBinding for the Cloud Logging instance and injects
+# the credentials into the shoot cluster as a Secret.
+#
+# The secret can be used by applications to configure log shipping to
+# SAP Cloud Logging via OpenTelemetry.
+#
+---
+apiVersion: account.btp.sap.crossplane.io/v1alpha1
+kind: ServiceBinding
+metadata:
+  name: cloud-logging-shoot-dummy
+spec:
+  forProvider:
+    name: cloud-logging-shoot-dummy
+    serviceInstanceRef:
+      name: cloud-logging
+    subaccountRef:
+      name: odg
+  providerConfigRef:
+    name: account-provider-config
+  writeConnectionSecretToRef:
+    name: cloud-logging-shoot-dummy-credentials
+    namespace: default

@@ -1,0 +1,65 @@
+# Kubernetes Provider Config for Shoot Dummy
+#
+# Allows the Crossplane Kubernetes provider to create resources inside
+# the Gardener shoot cluster.
+#
+# ⚠️  NETWORK LIMITATION: The control plane may not have direct network access
+# to the shoot API server. If you see "dial tcp ... i/o timeout" errors,
+# the shoot is not reachable from the control plane network.
+#
+# ALTERNATIVES when shoot is not reachable:
+#
+# 1. Use Flux on the shoot itself:
+#    - Bootstrap Flux on the shoot cluster
+#    - Configure it to watch the apps GitOps repo
+#    - Credentials are synced to the shoot during initial setup
+#
+# 2. Use Gardener's extension mechanism:
+#    - Deploy via shoot extensions or managed resources
+#    - Works through Gardener's seed-to-shoot connectivity
+#
+# 3. Use a bastion/VPN:
+#    - Configure network access from control plane to shoot
+#    - Requires infrastructure changes
+#
+# The kubeconfig secret must be created out-of-band or via the gardener-auth
+# provider's AdminKubeconfigRequest (requires installing provider-gardener-auth).
+#
+# To create the secret manually:
+#   1. Get kubeconfig via AdminKubeconfigRequest:
+#      kubectl --kubeconfig=<gardener-kc> create --raw \
+#        '/apis/core.gardener.cloud/v1beta1/namespaces/garden-odgdev/shoots/dummy/adminkubeconfig' \
+#        -f '{"apiVersion":"authentication.gardener.cloud/v1alpha1","kind":"AdminKubeconfigRequest","spec":{"expirationSeconds":86400}}'
+#   2. Extract kubeconfig from response and create secret:
+#      kubectl create secret generic shoot-dummy-kubeconfig --from-literal=kubeconfig=<kubeconfig-yaml>
+#
+# For automated rotation, use the gardener-auth provider:
+#   apiVersion: gardener.orchestrate.cloud.sap/v1alpha1
+#   kind: AdminKubeconfigRequest
+#   metadata:
+#     name: shoot-dummy-admin-kube-request
+#   spec:
+#     forProvider:
+#       validFor: 1h
+#       renewAfter: 45m
+#       shootRef:
+#         name: dummy
+#         namespace: garden-odgdev
+#     providerConfigRef:
+#       name: gardener
+#     writeConnectionSecretToRef:
+#       name: shoot-dummy-kubeconfig
+#       namespace: default
+#
+---
+apiVersion: kubernetes.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: shoot-dummy
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: default
+      name: shoot-dummy-kubeconfig
+      key: kubeconfig

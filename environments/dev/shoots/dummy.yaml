@@ -1,0 +1,167 @@
+# Gardener Shoot Cluster (OpenStack)
+#
+# This Object creates a Gardener Shoot cluster via the Kubernetes provider.
+# The provider uses the gardener-kubeconfig secret to access the Gardener API.
+#
+# Features:
+#   - OpenStack infrastructure (converged-cloud-bs)
+#   - Audit logging to BTP Audit Log Service
+#   - Calico networking
+#   - Vertical Pod Autoscaler enabled
+#
+# Dependencies (must exist in garden-odgdev namespace):
+#   - ConfigMap: shoot-dummy-audit-policy (created by audit-policy-object.yaml)
+#   - Secret: shoot-dummy-auditlog-credentials (created by auditlog-credentials-object.yaml)
+#
+---
+apiVersion: kubernetes.crossplane.io/v1alpha2
+kind: Object
+metadata:
+  name: shoot-dummy
+spec:
+  providerConfigRef:
+    name: gardener
+  # Note: references to inject values cause SSA errors with Gardener API
+  # Hardcoding values until provider bug is fixed
+  # - tenantID: from Subaccount external-name annotation (73a5482f-6be1-4253-976e-32b1dbccc9b9)
+  # - serviceURL: from auditlog-credentials secret data.url
+  forProvider:
+    manifest:
+      apiVersion: core.gardener.cloud/v1beta1
+      kind: Shoot
+      metadata:
+        name: dummy
+        namespace: garden-odgdev
+        annotations:
+          confirmation.gardener.cloud/deletion: "true"
+      spec:
+        extensions:
+          - type: shoot-dns-service
+            providerConfig:
+              apiVersion: service.dns.extensions.gardener.cloud/v1alpha1
+              kind: DNSConfig
+              syncProvidersFromShootSpecDNS: true
+          - type: shoot-auditlog-service
+            providerConfig:
+              apiVersion: service.auditlog.extensions.gardener.cloud/v1alpha1
+              kind: AuditlogConfig
+              type: standard
+              tenantID: "73a5482f-6be1-4253-976e-32b1dbccc9b9"
+              serviceURL: "https://api.auditlog.cf.eu01-canary.hana.ondemand.com"
+              secretReferenceName: auditlog-credentials
+        resources:
+          - name: auditlog-credentials
+            resourceRef:
+              apiVersion: v1
+              kind: Secret
+              name: shoot-dummy-auditlog-credentials
+        kubernetes:
+          kubeAPIServer:
+            requests:
+              maxNonMutatingInflight: 400
+              maxMutatingInflight: 200
+            eventTTL: 1h0m0s
+            logging:
+              verbosity: 2
+            defaultNotReadyTolerationSeconds: 300
+            defaultUnreachableTolerationSeconds: 300
+            auditConfig:
+              auditPolicy:
+                configMapRef:
+                  name: shoot-dummy-audit-policy
+          kubeControllerManager:
+            nodeCIDRMaskSize: 24
+            nodeMonitorGracePeriod: 40s
+          kubeScheduler:
+            profile: balanced
+          kubeProxy:
+            mode: IPTables
+            enabled: true
+          kubelet:
+            failSwapOn: true
+            kubeReserved:
+              cpu: 80m
+              memory: 1Gi
+              pid: 20k
+            imageGCHighThresholdPercent: 50
+            imageGCLowThresholdPercent: 40
+            serializeImagePulls: true
+            imageMinimumGCAge: 2m0s
+            imageMaximumGCAge: 0s
+          version: "1.36.5"
+          verticalPodAutoscaler:
+            enabled: true
+            evictAfterOOMThreshold: 10m0s
+            evictionRateBurst: 1
+            evictionRateLimit: -1
+            evictionTolerance: 0.5
+            recommendationMarginFraction: 0.15
+            updaterInterval: 1m0s
+            recommenderInterval: 1m0s
+        networking:
+          type: calico
+          providerConfig:
+            overlay:
+              createPodRoutes: true
+              enabled: false
+          pods: 100.64.0.0/12
+          nodes: 10.180.0.0/16
+          services: 100.104.0.0/13
+          ipFamilies:
+            - IPv4
+        maintenance:
+          autoUpdate:
+            kubernetesVersion: true
+            machineImageVersion: true
+          timeWindow:
+            begin: 040000+0100
+            end: 050000+0100
+        provider:
+          type: openstack
+          controlPlaneConfig:
+            apiVersion: openstack.provider.extensions.gardener.cloud/v1alpha1
+            kind: ControlPlaneConfig
+            loadBalancerProvider: f5
+          infrastructureConfig:
+            apiVersion: openstack.provider.extensions.gardener.cloud/v1alpha1
+            kind: InfrastructureConfig
+            networks:
+              workers: 10.180.0.0/16
+            floatingPoolName: FloatingIP-external-monsoon3-06
+          workers:
+            - cri:
+                name: containerd
+              name: worker-0
+              machine:
+                type: g_c8_m32_v2
+                image:
+                  name: gardenlinux
+                  version: 2150.15.0
+              maximum: 2
+              minimum: 1
+              maxSurge: 1
+              maxUnavailable: 0
+              zones:
+                - eu-de-1d
+              systemComponents:
+                allow: true
+              updateStrategy: AutoRollingUpdate
+          workersSettings:
+            sshAccess:
+              enabled: true
+        purpose: evaluation
+        hibernation:
+          enabled: false
+        region: eu-de-1
+        systemComponents:
+          coreDNS:
+            autoscaling:
+              mode: horizontal
+          nodeLocalDNS:
+            enabled: true
+            forceTCPToUpstreamDNS: false
+        schedulerName: default-scheduler
+        cloudProfile:
+          kind: CloudProfile
+          name: converged-cloud-bs
+        credentialsBindingName: monsoon3-eu-de1

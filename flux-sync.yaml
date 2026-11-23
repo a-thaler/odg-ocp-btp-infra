@@ -1,0 +1,43 @@
+# Flux GitRepository for ODG Infrastructure
+#
+# Prerequisites:
+# Create a deploy key or PAT secret:
+#   kubectl create secret generic odg-gitops-infra-auth \
+#     --from-file=identity=~/.ssh/id_ed25519 \
+#     --from-file=identity.pub=~/.ssh/id_ed25519.pub \
+#     --from-literal=known_hosts="$(ssh-keyscan github.tools.sap 2>/dev/null)"
+#
+# Or for HTTPS with PAT:
+#   kubectl create secret generic odg-gitops-infra-auth \
+#     --from-literal=username=git \
+#     --from-literal=password=<your-pat>
+#
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: odg-gitops-infra
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: ssh://git@github.tools.sap/open-component-model/odg-gitops-infra.git
+  ref:
+    branch: main
+  secretRef:
+    name: odg-gitops-infra-auth
+---
+# Flux Kustomization for Dev Environment
+#
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: odg-infra-dev
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: odg-gitops-infra
+  path: ./environments/dev
+  prune: true
+  targetNamespace: default
