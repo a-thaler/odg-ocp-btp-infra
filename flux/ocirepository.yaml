@@ -11,15 +11,15 @@ spec:
     operation: copy
   ref:
     # Pin to a published chart version. Update on each release.
-    tag: "0.1.0-1795613371"
+    tag: "0.1.0-1795614209"
   # GHCR package is private -> Flux needs a pull secret (see README / secrets).
   # Delete this block if you make the package public.
   secretRef:
     name: ghcr-pull
-  # Signature verification is NOT done in-cluster: the managed Flux source-controller
-  # runs read-only with HOME=/, so cosign keyless cannot write its Sigstore TUF trust
-  # root (/.sigstore). The cloud orchestrator exposes no knob to change this. The chart
-  # is still cosign-signed in CI; verify it out-of-band before bumping ref.tag:
-  #   cosign verify ghcr.io/a-thaler/odg/charts/odg-infra:<tag> \
-  #     --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-  #     --certificate-identity-regexp='^https://github.com/a-thaler/odg-ocp-btp-infra/.github/workflows/build.yaml@refs/.*$'
+  # Verify the cosign key-based signature produced by the publish workflow.
+  # Key-based (not keyless) so it works on the managed read-only source-controller:
+  # it checks the public key in the cosign-pub secret, no Sigstore TUF / writable HOME.
+  verify:
+    provider: cosign
+    secretRef:
+      name: cosign-pub

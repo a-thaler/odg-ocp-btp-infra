@@ -82,13 +82,15 @@ jobs:
           echo "chart-digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "CHART_DIGEST=${digest}" >> "$GITHUB_ENV"
           echo "OWNER=$OWNER" >> "$GITHUB_ENV"
-      - name: Sign chart (cosign keyless)
+      - name: Sign chart (cosign key)
         if: inputs.publish
         env:
-          COSIGN_YES: "true"
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          cosign sign "${REGISTRY}/${OWNER}/odg/charts/odg-infra@${CHART_DIGEST}"
+          cosign sign --yes --key env://COSIGN_KEY \
+            "${REGISTRY}/${OWNER}/odg/charts/odg-infra@${CHART_DIGEST}"
       - name: Attest Helm chart
         if: inputs.publish
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

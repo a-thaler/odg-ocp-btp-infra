@@ -20,6 +20,9 @@ spec:
       retries: 0
   upgrade:
     disableWait: true
+    # force: recreate resources whose immutable fields change (e.g. a
+    # RoleCollectionAssignment's roleCollectionName), which plain SSA rejects.
+    force: true
     remediation:
       retries: 0
   # Landscape values are layered, applied out-of-band (NOT committed):
