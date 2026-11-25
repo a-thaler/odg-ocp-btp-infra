@@ -85,19 +85,12 @@ jobs:
       - name: Sign chart (cosign key)
         if: inputs.publish
         env:
-          # COSIGN_KEY is the base64-encoded private key (single line, so GitHub
-          # secret storage cannot mangle PEM newlines).
-          COSIGN_KEY_B64: ${{ secrets.COSIGN_KEY }}
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          # Strip any whitespace/newlines GitHub may inject, then decode (ignore
-          # non-alphabet chars) so a single-line base64 secret round-trips cleanly.
-          printf '%s' "${COSIGN_KEY_B64}" | tr -d '[:space:]' | base64 -d -i > /tmp/cosign.key
-          head -1 /tmp/cosign.key | grep -q 'BEGIN' || { echo "::error::COSIGN_KEY secret did not decode to a PEM key"; exit 1; }
-          cosign sign --yes --key /tmp/cosign.key \
+          cosign sign --yes --key env://COSIGN_KEY \
             "${REGISTRY}/${OWNER}/odg/charts/odg-infra@${CHART_DIGEST}"
-          rm -f /tmp/cosign.key
       - name: Attest Helm chart
         if: inputs.publish
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
