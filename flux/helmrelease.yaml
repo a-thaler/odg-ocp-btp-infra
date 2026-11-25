@@ -1,0 +1,32 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: odg-infra
+  namespace: flux-system
+spec:
+  interval: 10m
+  releaseName: odg-infra
+  targetNamespace: default
+  chartRef:
+    kind: OCIRepository
+    name: odg-infra
+    namespace: flux-system
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  # Landscape values are layered, applied out-of-band (NOT committed):
+  #   1. ConfigMap  odg-infra-values         non-secret config (from secrets/values.yaml)
+  #   2. Secret     odg-infra-secret-values  sensitive overrides, merged on top (optional)
+  # Later entries win on key collisions. Missing ConfigMap -> release fails fast
+  # via the chart's `required` guards, which is intended.
+  valuesFrom:
+    - kind: ConfigMap
+      name: odg-infra-values
+      valuesKey: values.yaml
+    - kind: Secret
+      name: odg-infra-secret-values
+      valuesKey: values.yaml
+      optional: true

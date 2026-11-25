@@ -1,0 +1,25 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: odg-infra
+  namespace: flux-system
+spec:
+  interval: 10m
+  url: oci://ghcr.io/a-thaler/odg/charts/odg-infra
+  layerSelector:
+    mediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+    operation: copy
+  ref:
+    # Pin to a published chart version. Update on each release.
+    tag: "0.1.0-1795606327"
+  # GHCR package is private -> Flux needs a pull secret (see README / secrets).
+  # Delete this block if you make the package public.
+  secretRef:
+    name: ghcr-pull
+  # Verify the cosign keyless signature produced by the publish workflow.
+  # Signer identity = this repo's build workflow via GitHub Actions OIDC.
+  verify:
+    provider: cosign
+    matchOIDCIdentity:
+      - issuer: "https://token.actions.githubusercontent.com"
+        subject: "^https://github\\.com/a-thaler/odg-ocp-btp-infra/\\.github/workflows/build\\.yaml@refs/.*$"
