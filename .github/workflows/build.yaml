@@ -91,7 +91,9 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          printf '%s' "${COSIGN_KEY_B64}" | base64 -d > /tmp/cosign.key
+          # Strip any whitespace/newlines GitHub may inject, then decode (ignore
+          # non-alphabet chars) so a single-line base64 secret round-trips cleanly.
+          printf '%s' "${COSIGN_KEY_B64}" | tr -d '[:space:]' | base64 -d -i > /tmp/cosign.key
           head -1 /tmp/cosign.key | grep -q 'BEGIN' || { echo "::error::COSIGN_KEY secret did not decode to a PEM key"; exit 1; }
           cosign sign --yes --key /tmp/cosign.key \
             "${REGISTRY}/${OWNER}/odg/charts/odg-infra@${CHART_DIGEST}"
