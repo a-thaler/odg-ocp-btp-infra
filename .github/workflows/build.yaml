@@ -27,9 +27,7 @@ jobs:
     name: Build Helm chart
     runs-on: ubuntu-latest
     permissions:
-      attestations: write
       contents: read
-      id-token: write
       packages: write
     env:
       OWNER: ${{ github.repository_owner }}
@@ -89,15 +87,7 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          # --tlog-upload=false: produce a pure key signature. Without it, cosign in
-          # the Actions environment (ambient OIDC) also attaches a Fulcio certificate,
-          # which Flux key-based verify rejects ("expected key signature, not certificate").
+          # No id-token permission in this job, so cosign has no ambient OIDC and
+          # --key produces a pure key signature (no Fulcio cert) that Flux verifies.
           cosign sign --yes --tlog-upload=false --key env://COSIGN_KEY \
             "${REGISTRY}/${OWNER}/odg/charts/odg-infra@${CHART_DIGEST}"
-      - name: Attest Helm chart
-        if: inputs.publish
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          push-to-registry: true
-          subject-digest: ${{ env.CHART_DIGEST }}
-          subject-name: ${{ env.REGISTRY }}/${{ env.OWNER }}/odg/charts/odg-infra

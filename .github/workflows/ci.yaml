@@ -83,9 +83,7 @@ jobs:
     # so build.yaml can read COSIGN_KEY / COSIGN_PASSWORD for signing.
     secrets: inherit
     permissions:
-      attestations: write
       contents: read
-      id-token: write
       packages: write
     with:
       version: ${{ needs.preprocess.outputs.version }}
