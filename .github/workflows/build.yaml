@@ -89,7 +89,10 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          cosign sign --yes --key env://COSIGN_KEY \
+          # --tlog-upload=false: produce a pure key signature. Without it, cosign in
+          # the Actions environment (ambient OIDC) also attaches a Fulcio certificate,
+          # which Flux key-based verify rejects ("expected key signature, not certificate").
+          cosign sign --yes --tlog-upload=false --key env://COSIGN_KEY \
             "${REGISTRY}/${OWNER}/odg/charts/odg-infra@${CHART_DIGEST}"
       - name: Attest Helm chart
         if: inputs.publish
