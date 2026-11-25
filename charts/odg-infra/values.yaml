@@ -1,0 +1,77 @@
+# ODG Infrastructure Helm chart defaults.
+#
+# Landscape-specific values live ONLY in the per-landscape override (clusters/<landscape>/values.yaml):
+#   btp.cliServerUrl, btp.globalAccountId, subaccount.{guid,displayName,subdomain,region,admins},
+#   gardener.gardenNamespace, auditlog.serviceUrl, auditlog.viewers, shoots, shootDefaults.
+# Keys left empty "" / [] / {} here are REQUIRED from the override.
+
+# BTP Configuration
+btp:
+  cliServerUrl: ""     # Required (landscape): e.g. "https://canary.cli.btp.int.sap"
+  globalAccountId: ""  # Required (landscape): e.g. "8b7fcd40-9784-4c4c-bcd6-f1a7c7ce9566"
+
+# Subaccount Configuration
+subaccount:
+  name: "odg"
+  guid: ""          # Required (landscape): e.g. "73a5482f-6be1-4253-976e-32b1dbccc9b9"
+  displayName: ""   # Required (landscape): e.g. "infra-odg-dev-sap"
+  subdomain: ""     # Required (landscape): e.g. "infra-odg-dev-sap"
+  region: ""        # Required (landscape): e.g. "eu10-canary"
+  # subaccountAdmins can only be set at subaccount creation time (provider cannot update).
+  admins: []        # Required (landscape): list of admin emails
+
+# Gardener Configuration
+gardener:
+  gardenNamespace: ""              # Required: e.g. "garden-odgdev"
+  providerConfigName: "gardener"
+  kubeconfigSecretName: "gardener-kubeconfig"
+  # gardener-auth ProviderConfig (gardener.orchestrate.cloud.sap) is optional and
+  # omitted from the dev landscape. Enable only when provider-gardener-auth is installed.
+  authEnabled: false
+
+# Secrets Configuration (manual, out-of-band in manual-secrets namespace)
+secrets:
+  namespace: "manual-secrets"
+  cisCredentials: "cis-provider-secret"
+  cisCredentialsKey: "data"
+  serviceAccount: "sa-provider-secret"
+  serviceAccountKey: "credentials"
+  gardenerKubeconfigKey: "kubeconfig"
+  outputNamespace: "default"
+
+# Crossplane Configuration
+crossplane:
+  namespace: "crossplane-system"
+  kubernetesProviderSA: "provider-kubernetes"
+
+# Cloud Logging
+cloudLogging:
+  enabled: true
+  retentionPeriod: 30
+  maxDataInstances: 10
+  maxIngestInstances: 10
+
+# Auditlog
+auditlog:
+  enabled: true
+  sourceSecretName: "auditlog-credentials"
+  serviceUrl: ""    # Required (landscape): e.g. "https://api.auditlog.cf.eu01-canary.hana.ondemand.com"
+  roleCollectionName: "Auditlog Viewer"
+  # List of {name: "<identifier>", email: "<user@sap.com>"}; one RoleCollectionAssignment each.
+  viewers: []
+
+# IAS (Identity Authentication Service) - additional-tenant plan.
+# Requires manual global-account entitlement before enabling.
+ias:
+  enabled: false
+  cloudService: "PROD"
+
+# IDP Configuration
+idp:
+  origin: "sap.default"
+
+# Shoots. Each entry: {name, [kubernetes.version], [purpose],
+#   [worker.machineType], [worker.min], [worker.max]}. Unset fields fall back to shootDefaults.
+# Both `shoots` and `shootDefaults` are landscape-specific; see clusters/<landscape>/values.yaml.
+shoots: []
+shootDefaults: {}

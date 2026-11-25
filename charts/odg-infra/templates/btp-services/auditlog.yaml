@@ -1,21 +1,17 @@
-# BTP Audit Log Service Entitlement and Instance
-#
-# Required for streaming Kubernetes API server audit logs to SAP Audit Log Service
-#
----
+{{- if .Values.auditlog.enabled }}
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: Entitlement
 metadata:
-  name: odg-auditlog
+  name: {{ .Values.subaccount.name }}-auditlog
 spec:
   forProvider:
     serviceName: auditlog
     servicePlanName: standard
     amount: 1
     subaccountRef:
-      name: odg
+      name: {{ include "odg-infra.subaccountRef" . }}
   providerConfigRef:
-    name: account-provider-config
+    name: {{ include "odg-infra.providerConfigName" . }}
 ---
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: ServiceInstance
@@ -27,11 +23,11 @@ spec:
     offeringName: auditlog
     planName: standard
     subaccountRef:
-      name: odg
+      name: {{ include "odg-infra.subaccountRef" . }}
     serviceManagerRef:
-      name: odg
+      name: {{ .Values.subaccount.name }}
   providerConfigRef:
-    name: account-provider-config
+    name: {{ include "odg-infra.providerConfigName" . }}
 ---
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: ServiceBinding
@@ -43,9 +39,10 @@ spec:
     serviceInstanceRef:
       name: auditlog
     subaccountRef:
-      name: odg
+      name: {{ include "odg-infra.subaccountRef" . }}
   providerConfigRef:
-    name: account-provider-config
+    name: {{ include "odg-infra.providerConfigName" . }}
   writeConnectionSecretToRef:
-    name: auditlog-credentials
-    namespace: default
+    name: {{ .Values.auditlog.sourceSecretName }}
+    namespace: {{ .Values.secrets.outputNamespace }}
+{{- end }}

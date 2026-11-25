@@ -1,0 +1,50 @@
+{{- if .Values.ias.enabled }}
+apiVersion: account.btp.sap.crossplane.io/v1alpha1
+kind: Entitlement
+metadata:
+  name: {{ .Values.subaccount.name }}-identity-tenant
+spec:
+  forProvider:
+    serviceName: identity
+    servicePlanName: additional-tenant
+    amount: 1
+    subaccountRef:
+      name: {{ include "odg-infra.subaccountRef" . }}
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" . }}
+---
+apiVersion: account.btp.sap.crossplane.io/v1alpha1
+kind: ServiceInstance
+metadata:
+  name: ias-tenant
+spec:
+  forProvider:
+    name: ias-tenant
+    offeringName: identity
+    planName: additional-tenant
+    subaccountRef:
+      name: {{ include "odg-infra.subaccountRef" . }}
+    serviceManagerRef:
+      name: {{ .Values.subaccount.name }}
+    parameters:
+      cloud_service: {{ .Values.ias.cloudService | quote }}
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" . }}
+---
+apiVersion: account.btp.sap.crossplane.io/v1alpha1
+kind: ServiceBinding
+metadata:
+  name: ias-tenant-binding
+spec:
+  forProvider:
+    name: ias-tenant-binding
+    serviceInstanceRef:
+      name: ias-tenant
+    subaccountRef:
+      name: {{ include "odg-infra.subaccountRef" . }}
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" . }}
+  writeConnectionSecretToRef:
+    name: ias-tenant-credentials
+    namespace: {{ .Values.secrets.outputNamespace }}
+{{- end }}

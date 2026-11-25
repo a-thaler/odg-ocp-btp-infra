@@ -1,0 +1,19 @@
+apiVersion: btp.sap.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: {{ include "odg-infra.providerConfigName" . }}
+spec:
+  cisCredentials:
+    secretRef:
+      key: {{ .Values.secrets.cisCredentialsKey }}
+      name: {{ .Values.secrets.cisCredentials }}
+      namespace: {{ .Values.secrets.namespace }}
+    source: Secret
+  cliServerUrl: {{ .Values.btp.cliServerUrl }}
+  globalAccount: {{ required "btp.globalAccountId is required" .Values.btp.globalAccountId }}
+  serviceAccountSecret:
+    secretRef:
+      key: {{ .Values.secrets.serviceAccountKey }}
+      name: {{ .Values.secrets.serviceAccount }}
+      namespace: {{ .Values.secrets.namespace }}
+    source: Secret

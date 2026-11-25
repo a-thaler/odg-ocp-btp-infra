@@ -1,24 +1,17 @@
-# SAP Audit Log Viewer Subscription
-#
-# Provides a UI to view audit logs from the SAP Audit Log Service
-# Access via: BTP Cockpit > Services > Instances and Subscriptions > Audit Log Viewer > Go to Application
-#
-# Requires CloudManagement to be set up first.
-#
----
+{{- if .Values.auditlog.enabled }}
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: Entitlement
 metadata:
-  name: odg-auditlog-viewer
+  name: {{ .Values.subaccount.name }}-auditlog-viewer
 spec:
   forProvider:
     serviceName: auditlog-viewer
     servicePlanName: free
     enable: true
     subaccountRef:
-      name: odg
+      name: {{ include "odg-infra.subaccountRef" . }}
   providerConfigRef:
-    name: account-provider-config
+    name: {{ include "odg-infra.providerConfigName" . }}
 ---
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: Subscription
@@ -29,6 +22,7 @@ spec:
     appName: auditlog-viewer
     planName: free
   cloudManagementRef:
-    name: odg
+    name: {{ .Values.subaccount.name }}
   providerConfigRef:
-    name: account-provider-config
+    name: {{ include "odg-infra.providerConfigName" . }}
+{{- end }}

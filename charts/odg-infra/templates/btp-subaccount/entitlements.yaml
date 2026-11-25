@@ -1,34 +1,27 @@
-# Core BTP Entitlements
-#
-# These entitlements are required for the subaccount to provision other services.
-#   - service-manager: Required for ServiceManager resource
-#   - cis: Required for CloudManagement resource
-#
----
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: Entitlement
 metadata:
-  name: odg-service-manager
+  name: {{ .Values.subaccount.name }}-service-manager
 spec:
   forProvider:
     serviceName: service-manager
     servicePlanName: subaccount-admin
     enable: true
     subaccountRef:
-      name: odg
+      name: {{ include "odg-infra.subaccountRef" . }}
   providerConfigRef:
-    name: account-provider-config
+    name: {{ include "odg-infra.providerConfigName" . }}
 ---
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: Entitlement
 metadata:
-  name: odg-cis
+  name: {{ .Values.subaccount.name }}-cis
 spec:
   forProvider:
     serviceName: cis
     servicePlanName: local
     enable: true
     subaccountRef:
-      name: odg
+      name: {{ include "odg-infra.subaccountRef" . }}
   providerConfigRef:
-    name: account-provider-config
+    name: {{ include "odg-infra.providerConfigName" . }}

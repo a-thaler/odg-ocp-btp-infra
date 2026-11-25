@@ -1,0 +1,31 @@
+{{- if .Values.auditlog.enabled }}
+apiVersion: security.btp.sap.crossplane.io/v1alpha1
+kind: SubaccountApiCredential
+metadata:
+  name: {{ .Values.subaccount.name }}-xsuaa-credentials
+spec:
+  forProvider:
+    subaccountRef:
+      name: {{ include "odg-infra.subaccountRef" . }}
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" . }}
+  writeConnectionSecretToRef:
+    name: {{ .Values.subaccount.name }}-xsuaa-credentials
+    namespace: {{ .Values.secrets.outputNamespace }}
+{{- range .Values.auditlog.viewers }}
+---
+apiVersion: security.btp.sap.crossplane.io/v1alpha1
+kind: RoleCollectionAssignment
+metadata:
+  name: auditlog-viewer-{{ .name }}
+spec:
+  forProvider:
+    roleCollectionName: {{ $.Values.auditlog.roleCollectionName | quote }}
+    userName: {{ .email }}
+    origin: {{ $.Values.idp.origin }}
+  subaccountApiCredentialRef:
+    name: {{ $.Values.subaccount.name }}-xsuaa-credentials
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" $ }}
+{{- end }}
+{{- end }}

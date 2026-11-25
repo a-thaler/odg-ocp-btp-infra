@@ -1,166 +1,128 @@
 # ODG GitOps Infrastructure
 
-Infrastructure resources for Open Delivery Gear environments, managed via GitOps.
+Control plane infrastructure for Open Delivery Gear (ODG) environments, packaged as a
+single Helm chart and deployed by Flux. One chart (`charts/odg-infra`) renders all
+BTP and Gardener resources; landscape-specific values live in `clusters/<landscape>/values.yaml`.
 
 ## Structure
 
 ```
-environments/
+charts/
+└── odg-infra/
+    ├── Chart.yaml
+    ├── values.yaml                 # Defaults + documented required (empty "") fields
+    └── templates/
+        ├── _helpers.tpl
+        ├── btp-subaccount/         # ProviderConfig, Subaccount, Entitlements, ServiceManager, CloudManagement
+        ├── btp-services/           # Cloud Logging, Audit Log, Audit Log Viewer, role assignments, IAS
+        ├── gardener/               # Kubernetes ProviderConfig, RBAC, audit policy + auditlog credentials Objects
+        └── shoots/                 # Gardener Shoot Objects (one per shoots[] entry)
+clusters/
 └── dev/
-    ├── kustomization.yaml
-    ├── btp-subaccount/        # BTP Subaccount and core services
-    │   ├── providerconfig.yaml
-    │   ├── subaccount.yaml
-    │   ├── entitlements.yaml
-    │   ├── servicemanager.yaml
-    │   └── cloudmanagement.yaml
-    ├── btp-services/          # BTP service instances
-    │   ├── entitlements.yaml
-    │   ├── cloud-logging.yaml
-    │   ├── cloud-logging-shoot-dummy.yaml  # Per-shoot binding
-    │   ├── auditlog.yaml
-    │   ├── auditlog-viewer.yaml
-    │   └── ias.yaml
-    ├── gardener/              # Gardener API resources
-    │   ├── provider-config.yaml
-    │   ├── provider-kubernetes-rbac.yaml
-    │   ├── audit-policy-object.yaml
-    │   └── auditlog-credentials-object.yaml
-    └── shoots/                # Gardener Shoot clusters
-        ├── dummy.yaml                        # Shoot definition
-        ├── dummy-providerconfig.yaml         # ProviderConfig for shoot access
-        ├── dummy-cloud-logging-namespace.yaml # Namespace in shoot
-        └── dummy-cloud-logging-secret.yaml   # Credentials in shoot
+    ├── kustomization.yaml          # GitRepository + HelmRelease + odg-infra-values ConfigMap
+    ├── flux-system.yaml            # Flux GitRepository source
+    ├── odg-infra-release.yaml      # Flux HelmRelease (reads values from odg-infra-values ConfigMap)
+    └── values.yaml                 # Dev landscape overrides (rendered into the ConfigMap)
 ```
 
 ## Resources
 
 | Resource | Purpose |
 |----------|---------|
-| **BTP Subaccount** | Pre-existing subaccount (infra-odg-dev-sap) |
+| **BTP Subaccount** | Pre-existing subaccount (adopted, `deletionPolicy: Orphan`) |
 | **ServiceManager** | Required for provisioning BTP services |
-| **CloudManagement** | Required for subscriptions |
-| **Cloud Logging** | Centralized logging (OpenTelemetry enabled) |
-| **Cloud Logging Binding (per shoot)** | Shoot-specific credentials for log shipping |
-| **Audit Log Service** | Kubernetes API audit logs |
-| **Audit Log Viewer** | UI to view audit logs |
-| **IAS** | Identity Authentication Service (OIDC) |
-| **Gardener Shoot** | Kubernetes cluster on OpenStack |
+| **CloudManagement** | Required for subscriptions (Audit Log Viewer) |
+| **Cloud Logging** | Centralized logging (OpenTelemetry ingest enabled) |
+| **Audit Log Service** | Kubernetes API audit logs streamed to BTP |
+| **Audit Log Viewer** | UI + per-user `Auditlog Viewer` role collection assignments |
+| **IAS** | Identity Authentication Service (additional-tenant plan; disabled by default) |
+| **Gardener ProviderConfig + RBAC** | Lets the Crossplane kubernetes provider manage Shoots and read BTP resources |
+| **Shared audit resources** | One `audit-policy` ConfigMap + `auditlog-credentials` Secret in the garden namespace |
+| **Gardener Shoot** | Kubernetes cluster on OpenStack (cilium networking) |
 
-## Gardener Integration
+## Values
 
-The `gardener/` folder contains:
+All landscape-specific configuration is supplied through `clusters/<landscape>/values.yaml`,
+overriding the chart defaults in `charts/odg-infra/values.yaml`. Required fields (empty `""`
+in defaults): `btp.globalAccountId`, `subaccount.guid`, `subaccount.displayName`,
+`subaccount.subdomain`, `gardener.gardenNamespace`.
 
-- **provider-config.yaml**: Kubernetes ProviderConfig pointing to Gardener API
-- **provider-kubernetes-rbac.yaml**: RBAC for the Kubernetes provider to read BTP resources
-- **audit-policy-object.yaml**: Creates ConfigMap in garden-odgdev namespace
-- **auditlog-credentials-object.yaml**: Injects BTP auditlog credentials to Gardener
+Shoots are declared as a list; each entry needs only a `name`, with optional
+`kubernetes.version`, `purpose`, and `worker.{machineType,min,max}` overrides. Everything
+else comes from `shootDefaults`:
 
-The shoot references these resources for audit logging:
-- Audit policy ConfigMap: `shoot-dummy-audit-policy`
-- Auditlog credentials Secret: `shoot-dummy-auditlog-credentials`
+```yaml
+shoots:
+  - name: provisioner
+  - name: dev-1
+```
 
-## Cloud Logging Integration
+Audit Log Viewer access is a list of `{name, email}` under `auditlog.viewers`; each entry
+renders one `RoleCollectionAssignment` for the `Auditlog Viewer` role collection.
 
-Each shoot gets its own Cloud Logging ServiceBinding for log shipping credentials.
-The credentials are injected into the shoot cluster as a Secret.
-
-**Files per shoot:**
-- `btp-services/cloud-logging-shoot-<name>.yaml` - BTP ServiceBinding
-- `shoots/<name>-providerconfig.yaml` - ProviderConfig to access shoot
-- `shoots/<name>-cloud-logging-namespace.yaml` - Creates namespace in shoot
-- `shoots/<name>-cloud-logging-secret.yaml` - Injects credentials into shoot
-
-**⚠️ Network Limitation:** The control plane may not have direct network access
-to the shoot API server. If Objects targeting the shoot fail with timeout errors,
-consider:
-
-1. **Flux on shoot**: Bootstrap Flux on the shoot to pull from an apps GitOps repo
-2. **Initial setup script**: Use a one-time script to create the namespace and secret
-3. **Gardener extensions**: Deploy via shoot extensions through Gardener's internal connectivity
+IAS (`ias.enabled`) is `false` by default. The `additional-tenant` plan requires a manual
+global-account entitlement before it can be enabled.
 
 ## Secrets (out-of-band)
 
-These secrets must be created manually before applying:
+These must exist in the `manual-secrets` namespace before the chart reconciles:
 
-| Secret | Namespace | Purpose | How to create |
-|--------|-----------|---------|---------------|
-| `gardener-kubeconfig` | default | Service account token for Gardener API | See below |
-| `shoot-dummy-kubeconfig` | default | Admin kubeconfig for shoot dummy | See below |
-| `ias-provider-credentials` | default | IAS technical user credentials | See `btp-services/ias.yaml` |
+| Secret | Key | Purpose |
+|--------|-----|---------|
+| `cis-provider-secret` | `data` | CIS credentials for the BTP provider |
+| `sa-provider-secret` | `credentials` | Service account credentials for the BTP provider |
+| `gardener-kubeconfig` | `kubeconfig` | Service account kubeconfig for the Gardener API (garden namespace) |
 
-### Gardener Kubeconfig Secret
+## Rendering and validation
 
 ```bash
-kubectl create secret generic gardener-kubeconfig \
-  --from-literal=kubeconfig='<kubeconfig-yaml>'
+# Lint
+helm lint charts/odg-infra -f clusters/dev/values.yaml
+
+# Render the dev landscape
+helm template odg-infra charts/odg-infra -f clusters/dev/values.yaml
+
+# Server-side dry-run against the control plane
+helm template odg-infra charts/odg-infra -f clusters/dev/values.yaml \
+  | kubectl apply --dry-run=server -f -
 ```
 
-The kubeconfig should contain a service account token for the `garden-odgdev` namespace.
+## Flux deployment
 
-### Shoot Kubeconfig Secret
-
-Get a short-lived admin kubeconfig via AdminKubeconfigRequest:
-
-```bash
-# Get kubeconfig from Gardener
-KUBECONFIG_JSON=$(kubectl --kubeconfig=<gardener-kc> create --raw \
-  '/apis/core.gardener.cloud/v1beta1/namespaces/garden-odgdev/shoots/dummy/adminkubeconfig' \
-  -f '{"apiVersion":"authentication.gardener.cloud/v1alpha1","kind":"AdminKubeconfigRequest","spec":{"expirationSeconds":86400}}')
-
-# Extract and create secret
-SHOOT_KC=$(echo "$KUBECONFIG_JSON" | jq -r '.status.kubeconfig' | base64 -d)
-kubectl create secret generic shoot-dummy-kubeconfig --from-literal=kubeconfig="$SHOOT_KC"
-```
-
-For automated rotation, install the `gardener-auth` provider. See `shoots/dummy-providerconfig.yaml` for details.
-
-## Applying
+Flux reconciles `clusters/dev`: the kustomization renders the `odg-infra-values` ConfigMap
+from `values.yaml`, and the `odg-infra` HelmRelease installs `charts/odg-infra` with those
+values into the `default` namespace.
 
 ```bash
-# Apply all resources
-kubectl apply -k environments/dev
-
-# Or apply individually
-kubectl apply -f environments/dev/btp-services/auditlog.yaml
-kubectl apply -f environments/dev/shoots/dummy.yaml
-```
-
-## Flux Bootstrap (optional)
-
-```bash
-# Create git credentials secret
+# Git credentials secret (deploy key)
 kubectl -n flux-system create secret generic odg-gitops-infra-auth \
   --from-file=identity=~/.ssh/odg-gitops-infra-deploy \
   --from-file=identity.pub=~/.ssh/odg-gitops-infra-deploy.pub \
   --from-literal=known_hosts="$(ssh-keyscan github.tools.sap 2>/dev/null)"
 
-# Apply Flux sync resources
-kubectl apply -f flux-sync.yaml
+# Point Flux at this cluster path
+kubectl apply -k clusters/dev
 ```
 
-## Accessing Audit Logs
+## Accessing audit logs
 
-1. Go to BTP Cockpit → Subaccount (infra-odg-dev-sap)
-2. Services → Instances and Subscriptions
-3. Find "Audit Log Viewer" → "Go to Application"
+1. BTP Cockpit → Subaccount → Services → Instances and Subscriptions.
+2. Open "Audit Log Viewer" → "Go to Application".
+3. Requires the `Auditlog Viewer` role collection (assigned via `auditlog.viewers`).
 
-**Note:** You need the `Auditlog_Viewer` role collection assigned to view logs.
+## Adding a shoot
 
-## Adding a New Shoot
+Append an entry to `shoots` in `clusters/<landscape>/values.yaml`:
 
-1. Copy `environments/dev/shoots/dummy.yaml` → `shoots/<name>.yaml`
-2. Update in the shoot manifest:
-   - `metadata.name`: `shoot-<name>`
-   - `spec.forProvider.manifest.metadata.name`: `<name>`
-   - `tenantID` and `serviceURL` in auditlog extension
-3. Create Gardener Objects in `gardener/`:
-   - `audit-policy-object.yaml` → update name references
-   - `auditlog-credentials-object.yaml` → update name references
-4. Create Cloud Logging binding: `btp-services/cloud-logging-shoot-<name>.yaml`
-5. Create shoot access files in `shoots/`:
-   - `<name>-providerconfig.yaml`
-   - `<name>-cloud-logging-namespace.yaml`
-   - `<name>-cloud-logging-secret.yaml`
-6. Add all files to `kustomization.yaml`
-7. Create secret: `shoot-<name>-kubeconfig`
+```yaml
+shoots:
+  - name: my-shoot
+    # optional overrides:
+    # kubernetes:
+    #   version: "1.36.5"
+    # worker:
+    #   machineType: g_c16_m64
+```
+
+The shared `audit-policy` ConfigMap and `auditlog-credentials` Secret are reused by every
+shoot, so no per-shoot audit resources are needed.

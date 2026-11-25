@@ -1,23 +1,17 @@
-# Inject Audit Policy ConfigMap into Gardener Namespace
-#
-# This Object creates the audit policy ConfigMap in the Gardener project namespace.
-# The policy is based on the recommended Gardener audit policy.
-#
----
 apiVersion: kubernetes.crossplane.io/v1alpha2
 kind: Object
 metadata:
   name: gardener-audit-policy
 spec:
   providerConfigRef:
-    name: gardener
+    name: {{ .Values.gardener.providerConfigName }}
   forProvider:
     manifest:
       apiVersion: v1
       kind: ConfigMap
       metadata:
-        name: shoot-dummy-audit-policy
-        namespace: garden-odgdev
+        name: audit-policy
+        namespace: {{ required "gardener.gardenNamespace is required" .Values.gardener.gardenNamespace }}
       data:
         policy: |
           apiVersion: audit.k8s.io/v1
