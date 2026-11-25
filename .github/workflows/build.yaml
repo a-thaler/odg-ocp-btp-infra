@@ -89,8 +89,12 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          cosign sign --yes --key env://COSIGN_KEY \
+          # Write the key to a file; env:// can mangle multi-line PEM on the runner.
+          printf '%s\n' "${COSIGN_KEY}" > /tmp/cosign.key
+          head -1 /tmp/cosign.key | grep -q 'BEGIN' || { echo "::error::COSIGN_KEY secret is not valid PEM"; exit 1; }
+          cosign sign --yes --key /tmp/cosign.key \
             "${REGISTRY}/${OWNER}/odg/charts/odg-infra@${CHART_DIGEST}"
+          rm -f /tmp/cosign.key
       - name: Attest Helm chart
         if: inputs.publish
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
