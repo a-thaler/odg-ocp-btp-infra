@@ -56,11 +56,9 @@ auditlog:
   enabled: true
   sourceSecretName: "auditlog-credentials"
   serviceUrl: ""    # Required (landscape): e.g. "https://api.auditlog.cf.eu01-canary.hana.ondemand.com"
-  roleCollectionName: "Auditlog Viewer"
-  # Roles put into the Auditlog Viewer collection. roleTemplateAppId is landscape-specific
-  # (the subaccount's auditlog-management app id, e.g. "auditlog-management!bNN").
-  # Required (landscape) if auditlog.enabled; empty -> the collection is created with no roles.
-  roleCollectionRoles: []
+  # Predefined, read-only role collection that already contains the auditlog roles.
+  # Referenced by name only (no subaccount-specific app ids to manage).
+  roleCollectionName: "Subaccount Viewer"
   # List of {name: "<identifier>", email: "<user@sap.com>"}; one RoleCollectionAssignment each.
   viewers: []
 
