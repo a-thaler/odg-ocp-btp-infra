@@ -79,6 +79,9 @@ jobs:
     needs:
       - preprocess
     uses: ./.github/workflows/build.yaml
+    # Reusable workflows do NOT inherit caller secrets automatically; forward them
+    # so build.yaml can read COSIGN_KEY / COSIGN_PASSWORD for signing.
+    secrets: inherit
     permissions:
       attestations: write
       contents: read

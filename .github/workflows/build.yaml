@@ -89,12 +89,6 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          # Diagnostic: reveal the shape of the received secret WITHOUT printing it.
-          printf '%s' "${COSIGN_KEY}" > /tmp/k.pem
-          echo "received bytes: $(wc -c < /tmp/k.pem)"
-          echo "received sha:   $(sha256sum /tmp/k.pem | cut -c1-16)   (expected 653 / e5d8648159a7)"
-          echo "first line:     $(head -1 /tmp/k.pem | head -c 40)"
-          echo "line count:     $(wc -l < /tmp/k.pem)"
           cosign sign --yes --key env://COSIGN_KEY \
             "${REGISTRY}/${OWNER}/odg/charts/odg-infra@${CHART_DIGEST}"
       - name: Attest Helm chart
