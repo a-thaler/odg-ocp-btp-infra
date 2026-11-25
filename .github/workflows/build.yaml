@@ -85,13 +85,14 @@ jobs:
       - name: Sign chart (cosign key)
         if: inputs.publish
         env:
-          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          # COSIGN_KEY is the base64-encoded private key (single line, so GitHub
+          # secret storage cannot mangle PEM newlines).
+          COSIGN_KEY_B64: ${{ secrets.COSIGN_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          # Write the key to a file; env:// can mangle multi-line PEM on the runner.
-          printf '%s\n' "${COSIGN_KEY}" > /tmp/cosign.key
-          head -1 /tmp/cosign.key | grep -q 'BEGIN' || { echo "::error::COSIGN_KEY secret is not valid PEM"; exit 1; }
+          printf '%s' "${COSIGN_KEY_B64}" | base64 -d > /tmp/cosign.key
+          head -1 /tmp/cosign.key | grep -q 'BEGIN' || { echo "::error::COSIGN_KEY secret did not decode to a PEM key"; exit 1; }
           cosign sign --yes --key /tmp/cosign.key \
             "${REGISTRY}/${OWNER}/odg/charts/odg-infra@${CHART_DIGEST}"
           rm -f /tmp/cosign.key
