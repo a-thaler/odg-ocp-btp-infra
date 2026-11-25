@@ -12,6 +12,25 @@ spec:
   writeConnectionSecretToRef:
     name: {{ .Values.subaccount.name }}-xsuaa-credentials
     namespace: {{ .Values.secrets.outputNamespace }}
+---
+apiVersion: security.btp.sap.crossplane.io/v1alpha1
+kind: RoleCollection
+metadata:
+  name: {{ .Values.subaccount.name }}-auditlog-viewer
+spec:
+  forProvider:
+    name: {{ .Values.auditlog.roleCollectionName | quote }}
+    description: "View SAP Audit Log Service logs"
+    roles:
+      {{- range .Values.auditlog.roleCollectionRoles }}
+      - name: {{ .name | quote }}
+        roleTemplateAppId: {{ .roleTemplateAppId | quote }}
+        roleTemplateName: {{ .roleTemplateName | quote }}
+      {{- end }}
+  subaccountApiCredentialRef:
+    name: {{ .Values.subaccount.name }}-xsuaa-credentials
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" . }}
 {{- range .Values.auditlog.viewers }}
 ---
 apiVersion: security.btp.sap.crossplane.io/v1alpha1

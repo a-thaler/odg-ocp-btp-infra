@@ -11,12 +11,17 @@ spec:
     kind: OCIRepository
     name: odg-infra
     namespace: flux-system
+  # The chart creates Crossplane BTP/Gardener resources that provision asynchronously
+  # (minutes). Helm must NOT block on their readiness or roll back on a wait timeout,
+  # otherwise a still-provisioning release is treated as failed and uninstalled.
   install:
+    disableWait: true
     remediation:
-      retries: 3
+      retries: 0
   upgrade:
+    disableWait: true
     remediation:
-      retries: 3
+      retries: 0
   # Landscape values are layered, applied out-of-band (NOT committed):
   #   1. ConfigMap  odg-infra-values         non-secret config (from secrets/values.yaml)
   #   2. Secret     odg-infra-secret-values  sensitive overrides, merged on top (optional)
