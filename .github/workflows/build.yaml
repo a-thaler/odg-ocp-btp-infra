@@ -41,6 +41,8 @@ jobs:
           persist-credentials: false
       - name: Install Helm
         uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+        with:
+          version: v3.18.4
       - name: Log in to GHCR
         if: inputs.publish
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
