@@ -65,11 +65,16 @@ jobs:
 
           OWNER="${OWNER,,}"
 
+          # helm push writes "Pushed:"/"Digest:" to stderr, so capture both streams.
           output=$(helm push odg-infra-${VERSION}.tgz \
-            oci://$REGISTRY/$OWNER/odg/charts)
+            oci://$REGISTRY/$OWNER/odg/charts 2>&1)
           echo "${output}"
 
-          digest=$(echo "${output}" | grep '^Digest:' | cut -d' ' -f2)
+          digest=$(echo "${output}" | awk '/^Digest:/ {print $2}')
+          if [ -z "${digest}" ]; then
+            echo "::error::could not parse chart digest from helm push output"
+            exit 1
+          fi
 
           echo "chart-digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "CHART_DIGEST=${digest}" >> "$GITHUB_ENV"
