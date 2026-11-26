@@ -73,3 +73,15 @@ shootDefaults:
     min: 1
     max: 2
   purpose: "evaluation"
+
+# One PostgreSQL (postgresql-db, SCI) instance + binding per shoot. Connection details land
+# in "postgres-<shoot>-credentials" in secrets.outputNamespace. The subaccount needs
+# postgresql-db quota; the chart requests the entitlement, scaled by shoot count.
+postgres:
+  enabled: true
+  plan: "standard"
+  memory: 2
+  storageGB: 20
+  engineVersion: "17"
+  multiAz: false
+  backupRetentionDays: 3

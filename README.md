@@ -45,6 +45,7 @@ examples/
 | **Shared audit resources** | One `audit-policy` ConfigMap + `auditlog-credentials` Secret in the garden namespace |
 | **Gardener Shoot** | Kubernetes cluster on OpenStack (cilium networking) |
 | **Shoot OIDC access** | Optional (`shootOidc.enabled`): per-shoot Structured Authentication ConfigMap trusting the IAS tenant, so users access the kube-apiserver with IAS tokens; RBAC applied manually; see below |
+| **PostgreSQL per shoot** | Optional (`postgres.enabled`): one `postgresql-db` (SCI) ServiceInstance + ServiceBinding per shoot, plus the subaccount entitlement (scaled by shoot count). Connection secret `postgres-<shoot>-credentials`; see below |
 
 ## Values
 
@@ -142,6 +143,29 @@ roleRef:
 
 Apply it with a shoot `adminkubeconfig` (see Gardener docs). Changing the ConfigMap later
 is picked up on the next shoot reconciliation, which is not automatically triggered.
+
+## PostgreSQL database per shoot
+
+Set `postgres.enabled: true` to provision one PostgreSQL database (`postgresql-db`,
+hyperscaler option, SCI) for every entry in `shoots`. For each shoot the chart renders a
+`ServiceInstance` named `postgres-<shoot>` and a `ServiceBinding` that writes the
+connection details (host, port, user, password, database, TLS) to the Secret
+`postgres-<shoot>-credentials` in `secrets.outputNamespace`. Applications on that shoot
+consume the secret (replicate it into the shoot, or read it from the control plane).
+
+The chart also requests the subaccount **entitlements**, scaled by shoot count:
+
+- compute: plan `postgres.plan` (`standard` or `premium`), amount = shoots (doubled when
+  `postgres.multiAz: true`);
+- storage: `storage` (or `storage_ha` when `multiAz`), amount = shoots.
+
+The global account must have quota for these plans. `postgres.enabled: true` with an empty
+`shoots` list fails rendering on purpose (nothing to attach a database to).
+
+Provisioning parameters map to the SAP service: `memory` (GB, standard allows 2 or 4),
+`storageGB` (multiple of 5), `engineVersion` (SCI: 15 or 17), `multiAz`, and
+`backupRetentionDays` (SCI range 0 to 14). SCI does not support engine-version upgrades or
+single-AZ to multi-AZ conversion after creation.
 
 ## Prerequisites (control plane)
 

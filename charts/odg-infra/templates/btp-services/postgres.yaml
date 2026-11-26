@@ -1,0 +1,82 @@
+{{- if .Values.postgres.enabled }}
+{{- $root := . }}
+{{- $pg := .Values.postgres }}
+{{- $shoots := .Values.shoots }}
+{{- if not $shoots }}
+{{- fail "postgres.enabled is true but shoots is empty; a PostgreSQL instance is created per shoot" }}
+{{- end }}
+{{- $count := len $shoots }}
+{{- $computeMultiplier := ternary 2 1 $pg.multiAz }}
+{{- $storageSku := ternary "storage_ha" "storage" $pg.multiAz }}
+# Subaccount-wide entitlements for the per-shoot PostgreSQL instances. Compute SKU scales
+# with shoot count (doubled for multi-AZ); one storage SKU per shoot.
+apiVersion: account.btp.sap.crossplane.io/v1alpha1
+kind: Entitlement
+metadata:
+  name: {{ .Values.subaccount.name }}-postgresql-db-compute
+spec:
+  forProvider:
+    serviceName: postgresql-db
+    servicePlanName: {{ $pg.plan | quote }}
+    amount: {{ mul $count $computeMultiplier }}
+    subaccountRef:
+      name: {{ include "odg-infra.subaccountRef" . }}
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" . }}
+---
+apiVersion: account.btp.sap.crossplane.io/v1alpha1
+kind: Entitlement
+metadata:
+  name: {{ .Values.subaccount.name }}-postgresql-db-storage
+spec:
+  forProvider:
+    serviceName: postgresql-db
+    servicePlanName: {{ $storageSku | quote }}
+    amount: {{ $count }}
+    subaccountRef:
+      name: {{ include "odg-infra.subaccountRef" . }}
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" . }}
+{{- range $shoots }}
+{{- $shoot := . }}
+---
+apiVersion: account.btp.sap.crossplane.io/v1alpha1
+kind: ServiceInstance
+metadata:
+  name: {{ $pg.bindingPrefix }}-{{ $shoot.name }}
+spec:
+  forProvider:
+    name: {{ $pg.bindingPrefix }}-{{ $shoot.name }}
+    offeringName: postgresql-db
+    planName: {{ $pg.plan | quote }}
+    subaccountRef:
+      name: {{ include "odg-infra.subaccountRef" $root }}
+    serviceManagerRef:
+      name: {{ $root.Values.subaccount.name }}
+    parameters:
+      memory: {{ $pg.memory }}
+      storage: {{ $pg.storageGB }}
+      engine_version: {{ $pg.engineVersion | quote }}
+      multi_az: {{ $pg.multiAz }}
+      backup_retention_period: {{ $pg.backupRetentionDays }}
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" $root }}
+---
+apiVersion: account.btp.sap.crossplane.io/v1alpha1
+kind: ServiceBinding
+metadata:
+  name: {{ $pg.bindingPrefix }}-{{ $shoot.name }}-binding
+spec:
+  forProvider:
+    name: {{ $pg.bindingPrefix }}-{{ $shoot.name }}-binding
+    serviceInstanceRef:
+      name: {{ $pg.bindingPrefix }}-{{ $shoot.name }}
+    subaccountRef:
+      name: {{ include "odg-infra.subaccountRef" $root }}
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" $root }}
+  writeConnectionSecretToRef:
+    name: {{ $pg.bindingPrefix }}-{{ $shoot.name }}-credentials
+    namespace: {{ $root.Values.secrets.outputNamespace }}
+{{- end }}
+{{- end }}

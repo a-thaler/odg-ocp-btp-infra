@@ -209,3 +209,24 @@ shoots: []
 #   networking: { type: cilium, pods, nodes, services }
 # ---------------------------------------------------------------------------------------
 shootDefaults: {}
+
+# ---------------------------------------------------------------------------------------
+# PostgreSQL (postgresql-db, hyperscaler option) database, one instance + binding per
+# shoot. The subaccount-wide Entitlement is requested once with amount scaled by the
+# number of shoots: compute SKU (standard|premium) x shoots, plus one storage SKU per
+# shoot (storage_ha when multiAz is true). Each instance writes its connection secret to
+# "<bindingPrefix>-<shoot>-credentials" in secrets.outputNamespace.
+# The subaccount must have quota for the postgresql-db plan in the global account.
+# ---------------------------------------------------------------------------------------
+postgres:
+  enabled: false
+  # Service plan: "standard" (1 vCPU:2GB) or "premium" (1 vCPU:4GB).
+  plan: "standard"
+  # Prefix for the per-shoot connection secret and instance/binding names.
+  bindingPrefix: "postgres"
+  # Provisioning parameters (see SAP help "Parameters"). SCI allows engineVersion 15 or 17.
+  memory: 2          # GB; standard plan allows 2 or 4
+  storageGB: 20      # multiple of 5
+  engineVersion: "17"
+  multiAz: false     # true uses storage_ha SKU and doubles compute SKU
+  backupRetentionDays: 3  # range 0-14
