@@ -11,6 +11,10 @@ spec:
     kind: OCIRepository
     name: odg-infra
     namespace: flux-system
+  # Re-apply managed resources that drift or get deleted out-of-band (e.g. Crossplane
+  # Objects that were force-recreated), without needing a release version change.
+  driftDetection:
+    mode: enabled
   # The chart creates Crossplane BTP/Gardener resources that provision asynchronously
   # (minutes). Helm must NOT block on their readiness or roll back on a wait timeout,
   # otherwise a still-provisioning release is treated as failed and uninstalled.

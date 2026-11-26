@@ -1,79 +1,163 @@
-# ODG Infrastructure Helm chart defaults.
+# ODG Infrastructure Helm chart — default values.
 #
-# Landscape-specific values live ONLY in the per-landscape override (clusters/<landscape>/values.yaml):
-#   btp.cliServerUrl, btp.globalAccountId, subaccount.{guid,displayName,subdomain,region,admins},
-#   gardener.gardenNamespace, auditlog.serviceUrl, auditlog.viewers, shoots, shootDefaults.
-# Keys left empty "" / [] / {} here are REQUIRED from the override.
+# This file is the canonical schema reference. Override per landscape with your own
+# values file (start from examples/values.example.yaml), delivered to the HelmRelease
+# as the `odg-infra-values` ConfigMap.
+#
+# Conventions:
+#   - Keys left empty ("" / [] / {}) are REQUIRED from the override; the chart has no
+#     sensible default for them (they identify a specific subaccount / landscape).
+#   - Keys with a concrete value are structural defaults; override only if your landscape
+#     differs.
 
-# BTP Configuration
+# ---------------------------------------------------------------------------------------
+# BTP global account / CLI endpoint used by the Crossplane BTP ProviderConfig.
+# ---------------------------------------------------------------------------------------
 btp:
-  cliServerUrl: ""     # Required (landscape): e.g. "https://canary.cli.btp.int.sap"
-  globalAccountId: ""  # Required (landscape): e.g. "8b7fcd40-9784-4c4c-bcd6-f1a7c7ce9566"
+  # BTP CLI server URL for your region. Example: "https://canary.cli.btp.int.sap".
+  cliServerUrl: ""        # REQUIRED (landscape)
+  # Global account GUID that owns the subaccount. Example: "8b7fcd40-...-f1a7c7ce9566".
+  globalAccountId: ""     # REQUIRED (landscape)
 
-# Subaccount Configuration
+# ---------------------------------------------------------------------------------------
+# The subaccount this chart manages. The subaccount is pre-existing and adopted
+# (deletionPolicy: Orphan), it is never created or deleted by the chart.
+# ---------------------------------------------------------------------------------------
 subaccount:
+  # Crossplane resource name (used for cross-references in the chart). Rarely changed.
   name: "odg"
-  guid: ""          # Required (landscape): e.g. "73a5482f-6be1-4253-976e-32b1dbccc9b9"
-  displayName: ""   # Required (landscape): e.g. "infra-odg-dev-sap"
-  subdomain: ""     # Required (landscape): e.g. "infra-odg-dev-sap"
-  region: ""        # Required (landscape): e.g. "eu10-canary"
-  # subaccountAdmins can only be set at subaccount creation time (provider cannot update).
-  admins: []        # Required (landscape): list of admin emails
+  # Subaccount GUID. Set as the external-name (adoption) AND reused as the auditlog
+  # tenantID. Example: "73a5482f-6be1-4253-976e-32b1dbccc9b9".
+  guid: ""                # REQUIRED (landscape)
+  # Cockpit display name and subdomain of the subaccount.
+  displayName: ""         # REQUIRED (landscape), e.g. "infra-odg-dev-sap"
+  subdomain: ""           # REQUIRED (landscape), e.g. "infra-odg-dev-sap"
+  # BTP region of the subaccount. Example: "eu10-canary".
+  region: ""              # REQUIRED (landscape)
+  # Subaccount administrators. NOTE: the provider can only set these at creation time;
+  # for an adopted subaccount this list is informational and changes must be made in the
+  # BTP cockpit.
+  admins: []              # REQUIRED (landscape), list of emails
 
-# Gardener Configuration
+# ---------------------------------------------------------------------------------------
+# Gardener connectivity. The kubernetes Crossplane provider talks to the Gardener API to
+# manage Shoots; these values point it at the right project and credentials.
+# ---------------------------------------------------------------------------------------
 gardener:
-  gardenNamespace: ""              # Required: e.g. "garden-odgdev"
+  # Gardener project namespace that holds the Shoots. Example: "garden-odgdev".
+  gardenNamespace: ""                    # REQUIRED (landscape)
+  # Name of the kubernetes.crossplane.io ProviderConfig the chart creates and the Shoot
+  # Objects reference. Structural; keep unless you run multiple Gardener targets.
   providerConfigName: "gardener"
+  # Name of the manual secret (in secrets.namespace) holding the Gardener API kubeconfig.
   kubeconfigSecretName: "gardener-kubeconfig"
-  # gardener-auth ProviderConfig (gardener.orchestrate.cloud.sap) is optional and
-  # omitted from the dev landscape. Enable only when provider-gardener-auth is installed.
+  # Optional gardener-auth ProviderConfig (gardener.orchestrate.cloud.sap), for shoots
+  # that request auto-rotating admin kubeconfigs. Enable only when provider-gardener-auth
+  # is installed on the control plane.
   authEnabled: false
 
-# Secrets Configuration (manual, out-of-band in manual-secrets namespace)
+# ---------------------------------------------------------------------------------------
+# Manual, out-of-band secrets the Crossplane providers read. These MUST already exist in
+# `namespace` before the chart reconciles (see README Prerequisites). The chart only
+# references them by name/key, it never creates them.
+# ---------------------------------------------------------------------------------------
 secrets:
   namespace: "manual-secrets"
+  # CIS credentials for the BTP provider.
   cisCredentials: "cis-provider-secret"
   cisCredentialsKey: "data"
+  # Service account credentials for the BTP provider.
   serviceAccount: "sa-provider-secret"
   serviceAccountKey: "credentials"
+  # Key inside gardener.kubeconfigSecretName holding the kubeconfig.
   gardenerKubeconfigKey: "kubeconfig"
+  # Namespace where the chart writes connection secrets (service bindings, xsuaa creds).
   outputNamespace: "default"
 
-# Crossplane Configuration
+# ---------------------------------------------------------------------------------------
+# Where the Crossplane kubernetes provider runs, for the BTP-reader RBAC the chart grants
+# it (so shoot Objects can read the Subaccount to inject the auditlog tenantID).
+# ---------------------------------------------------------------------------------------
 crossplane:
   namespace: "crossplane-system"
   kubernetesProviderSA: "provider-kubernetes"
 
-# Cloud Logging
+# ---------------------------------------------------------------------------------------
+# SAP Cloud Logging: a shared ServiceInstance + ServiceBinding; the binding's connection
+# secret (cloud-logging-credentials) is used to ship logs from the shoots.
+# ---------------------------------------------------------------------------------------
 cloudLogging:
   enabled: true
-  retentionPeriod: 30
-  maxDataInstances: 10
-  maxIngestInstances: 10
+  retentionPeriod: 30     # days logs are retained
+  maxDataInstances: 10    # OpenSearch data node cap
+  maxIngestInstances: 10  # ingestion node cap
 
-# Auditlog
+# ---------------------------------------------------------------------------------------
+# SAP Audit Log: the service instance/binding, the Viewer subscription, the role
+# collection that grants Viewer access, and the per-user assignments.
+# ---------------------------------------------------------------------------------------
 auditlog:
   enabled: true
+  # Name of the connection secret the auditlog ServiceBinding writes (in outputNamespace);
+  # the gardener auditlog-credentials Object sources user/password from it.
   sourceSecretName: "auditlog-credentials"
-  serviceUrl: ""    # Required (landscape): e.g. "https://api.auditlog.cf.eu01-canary.hana.ondemand.com"
-  # Predefined, read-only role collection that already contains the auditlog roles.
-  # Referenced by name only (no subaccount-specific app ids to manage).
-  roleCollectionName: "Subaccount Viewer"
-  # List of {name: "<identifier>", email: "<user@sap.com>"}; one RoleCollectionAssignment each.
+  # Audit Log Service API endpoint for your region. Example:
+  # "https://api.auditlog.cf.eu01-canary.hana.ondemand.com".
+  serviceUrl: ""          # REQUIRED (landscape)
+  # Name of the role collection the chart creates and assigns users to.
+  roleCollectionName: "Auditlog Viewer"
+  # Roles placed INTO that collection. The Audit Log Viewer UI needs BOTH the management
+  # and the viewer app role. roleTemplateAppId carries the per-subaccount !bN/!tN suffix,
+  # which is assigned by BTP and only readable from the authorization API:
+  #   GET /sap/rest/authorization/v2/apps  ->  .appid of auditlog-management / auditlog-viewer
+  # REQUIRED per landscape. Each entry: {name, roleTemplateName, roleTemplateAppId}, e.g.
+  #   - name: "Auditlog_Auditor"
+  #     roleTemplateName: "Auditlog_Auditor"
+  #     roleTemplateAppId: "auditlog-management!b7"
+  #   - name: "Auditlog_Auditor"
+  #     roleTemplateName: "Auditlog_Auditor"
+  #     roleTemplateAppId: "auditlog-viewer!t7"
+  roleCollectionRoles: []
+  # Users assigned to the collection; one RoleCollectionAssignment each.
+  # Each entry: {name: "<identifier>", email: "<user@sap.com>"}.
   viewers: []
 
-# IAS (Identity Authentication Service) - additional-tenant plan.
-# Requires manual global-account entitlement before enabling.
+# ---------------------------------------------------------------------------------------
+# IAS (Identity Authentication Service), additional-tenant plan. Disabled by default: the
+# plan needs a manual global-account entitlement before it can be provisioned.
+# ---------------------------------------------------------------------------------------
 ias:
   enabled: false
-  cloudService: "PROD"
+  cloudService: "PROD"    # tenant URL pattern passed to the service instance
 
-# IDP Configuration
+# ---------------------------------------------------------------------------------------
+# Identity provider origin used for role collection assignments. "sap.default" is the SAP
+# ID Service; use a custom IAS origin if trust is configured.
+# ---------------------------------------------------------------------------------------
 idp:
   origin: "sap.default"
 
-# Shoots. Each entry: {name, [kubernetes.version], [purpose],
-#   [worker.machineType], [worker.min], [worker.max]}. Unset fields fall back to shootDefaults.
-# Both `shoots` and `shootDefaults` are landscape-specific; see clusters/<landscape>/values.yaml.
+# ---------------------------------------------------------------------------------------
+# Shoots to create (one Gardener Shoot Object per entry). Landscape-specific.
+# Each entry needs only `name`; the rest falls back to shootDefaults. Optional overrides:
+#   - name: dev-1
+#     kubernetes: { version: "1.36.5" }   # override cluster version
+#     purpose: "evaluation"               # override shoot purpose
+#     worker:
+#       machineType: "g_c16_m64"          # override node machine type
+#       min: 1                            # override min node count
+#       max: 3                            # override max node count
+# ---------------------------------------------------------------------------------------
 shoots: []
+
+# ---------------------------------------------------------------------------------------
+# Defaults applied to every shoot unless overridden per entry above. Landscape-specific
+# (OpenStack region, cloud profile, machine type, networking). Required (non-empty) when
+# `shoots` is non-empty. See examples/values.example.yaml for a complete OpenStack set:
+#   kubernetes: { version }
+#   region, cloudProfile, credentialsBindingName, floatingPoolName, zones: []
+#   worker: { machineType, image: {name, version}, min, max }
+#   purpose
+#   networking: { type: cilium, pods, nodes, services }
+# ---------------------------------------------------------------------------------------
 shootDefaults: {}

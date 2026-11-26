@@ -3,7 +3,8 @@
 Control plane infrastructure for Open Delivery Gear (ODG) environments, packaged as a
 single Helm chart, published as a signed OCI artifact, and deployed by Flux. One chart
 (`charts/odg-infra`) renders all BTP and Gardener resources; landscape-specific values
-are supplied out-of-band from the gitignored `secrets/values.yaml`.
+are supplied as an override (see `examples/values.example.yaml`) delivered to the chart
+as a ConfigMap, kept out of git.
 
 ## Structure
 
@@ -22,10 +23,11 @@ flux/                               # committed Flux resources
 ├── ocirepository.yaml              # OCIRepository: pulls signed chart from GHCR + cosign verify
 ├── helmrelease.yaml                # HelmRelease: installs chart, reads values via valuesFrom
 └── kustomization.yaml              # bundles the two above
-secrets/                            # gitignored; never committed
-└── values.yaml                     # landscape overrides -> applied as odg-infra-values ConfigMap
+examples/
+└── values.example.yaml            # template landscape override (copy, fill in, keep out of git)
 .github/workflows/
-└── build.yaml                      # package, push, cosign-sign, attest the chart
+├── ci.yaml                         # entrypoint: compute version, call build.yaml (secrets: inherit)
+└── build.yaml                      # package, push, cosign key-sign the chart
 ```
 
 ## Resources
@@ -45,31 +47,17 @@ secrets/                            # gitignored; never committed
 
 ## Values
 
-All landscape-specific configuration is supplied through `secrets/values.yaml`
-(gitignored), overriding the chart defaults in `charts/odg-infra/values.yaml`. Required
-fields (empty `""` in defaults): `btp.cliServerUrl`, `btp.globalAccountId`,
-`subaccount.guid`, `subaccount.displayName`, `subaccount.subdomain`, `subaccount.region`,
-`gardener.gardenNamespace`, `auditlog.serviceUrl`.
+Landscape-specific configuration is an override on top of the chart defaults in
+`charts/odg-infra/values.yaml`. Copy `examples/values.example.yaml`, fill it in, and
+supply it as the `odg-infra-values` ConfigMap (see Prerequisites / Flux deployment).
 
-Shoots are declared as a list; each entry needs only a `name`, with optional
-`kubernetes.version`, `purpose`, and `worker.{machineType,min,max}` overrides. Everything
-else comes from `shootDefaults`:
+## Prerequisites (control plane)
 
-```yaml
-shoots:
-  - name: provisioner
-  - name: dev-1
-```
+These must exist on the control plane before Flux reconciles the chart. Flux (source +
+helm controllers) is assumed already running in `flux-system`.
 
-Audit Log Viewer access is a list of `{name, email}` under `auditlog.viewers`; each entry
-renders one `RoleCollectionAssignment` for the `Auditlog Viewer` role collection.
-
-IAS (`ias.enabled`) is `false` by default. The `additional-tenant` plan requires a manual
-global-account entitlement before it can be enabled.
-
-## Secrets (out-of-band)
-
-These must exist in the `manual-secrets` namespace before the chart reconciles:
+Manual secrets in the `manual-secrets` namespace (credentials for the Crossplane providers,
+managed out-of-band):
 
 | Secret | Key | Purpose |
 |--------|-----|---------|
@@ -77,17 +65,28 @@ These must exist in the `manual-secrets` namespace before the chart reconciles:
 | `sa-provider-secret` | `credentials` | Service account credentials for the BTP provider |
 | `gardener-kubeconfig` | `kubeconfig` | Service account kubeconfig for the Gardener API (garden namespace) |
 
+Objects in `flux-system` that the OCIRepository / HelmRelease depend on (created by the
+deploy steps below):
+
+| Object | Kind | Purpose |
+|--------|------|---------|
+| `ghcr-pull` | Secret (dockerconfigjson) | Pulls the chart from the private GHCR package |
+| `cosign-pub` | Secret | Public key for the OCIRepository cosign verify; missing → `SourceVerified=False` |
+| `odg-infra-values` | ConfigMap | The landscape override the HelmRelease reads via `valuesFrom` |
+
 ## Rendering and validation
 
 ```bash
-# Lint
-helm lint charts/odg-infra -f secrets/values.yaml
+# Replace my-values.yaml with your landscape override (copy of examples/values.example.yaml).
 
-# Render the dev landscape
-helm template odg-infra charts/odg-infra -f secrets/values.yaml
+# Lint
+helm lint charts/odg-infra -f my-values.yaml
+
+# Render
+helm template odg-infra charts/odg-infra -f my-values.yaml
 
 # Server-side dry-run against the control plane
-helm template odg-infra charts/odg-infra -f secrets/values.yaml \
+helm template odg-infra charts/odg-infra -f my-values.yaml \
   | kubectl apply --dry-run=server -f -
 ```
 
@@ -95,101 +94,71 @@ helm template odg-infra charts/odg-infra -f secrets/values.yaml \
 
 The chart is published as a signed OCI artifact at
 `ghcr.io/a-thaler/odg/charts/odg-infra`. Flux pulls it with an `OCIRepository` and
-installs it with a `HelmRelease`, both in `flux/` (committed). Landscape values are
-layered via the HelmRelease `valuesFrom`, applied out-of-band (NOT committed):
-a ConfigMap `odg-infra-values` for non-secret config (source: gitignored
-`secrets/values.yaml`), plus an optional Secret `odg-infra-secret-values` merged on
-top for any sensitive values. Later sources override earlier ones on key collisions.
-Flux is assumed already running in `flux-system`.
+installs it with a `HelmRelease`, both in `flux/` (committed). The landscape override is
+delivered as the `odg-infra-values` ConfigMap, read by the HelmRelease via `valuesFrom`
+(an optional `odg-infra-secret-values` Secret can be layered on top for any sensitive
+values; later sources win on key collisions).
 
-Deploy order:
+Deploy order (prerequisites from the section above; `my-values.yaml` is your landscape
+override, a filled-in copy of `examples/values.example.yaml`):
 
 ```bash
-# 1. GHCR pull secret (the package is private). Use a PAT or the gh token with
-#    read:packages. Skip this step if you make the GHCR package public.
+# 1. GHCR pull secret (the package is private). Skip if you make the package public.
 kubectl -n flux-system create secret docker-registry ghcr-pull \
   --docker-server=ghcr.io \
   --docker-username=a-thaler \
-  --docker-password="$(gh auth token)"
+  --docker-password='<ghcr-pat-with-read:packages>'
 
-# 2. Landscape values as a ConfigMap, from the gitignored override file.
-#    This is WHERE the custom values.yaml gets deployed; the HelmRelease reads it
-#    via valuesFrom. It holds only identifiers/config, so a ConfigMap is correct.
-kubectl -n flux-system create configmap odg-infra-values \
-  --from-file=values.yaml=secrets/values.yaml \
+# 2. Cosign public key secret for the OCIRepository verify block.
+kubectl -n flux-system create secret generic cosign-pub \
+  --from-file=cosign.pub=cosign.pub \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# 2b. (optional) Sensitive overrides merged on top. Only needed if some values
-#     are actually secret (e.g. an inlined client secret). Omit otherwise.
-# kubectl -n flux-system create secret generic odg-infra-secret-values \
-#   --from-file=values.yaml=secrets/secret-values.yaml \
-#   --dry-run=client -o yaml | kubectl apply -f -
+# 3. Landscape override as a ConfigMap (the HelmRelease reads it via valuesFrom).
+kubectl -n flux-system create configmap odg-infra-values \
+  --from-file=values.yaml=my-values.yaml \
+  --dry-run=client -o yaml | kubectl apply -f -
 
-# 3. The committed Flux resources (OCIRepository + HelmRelease).
+# 4. The committed Flux resources (OCIRepository + HelmRelease).
 kubectl apply -k flux
 
-# 4. Watch reconciliation.
+# 5. Watch reconciliation.
 flux get ocirepository odg-infra
 flux get helmrelease odg-infra
 ```
 
-Updating landscape values later: edit `secrets/values.yaml`, re-run step 2, then
+Updating landscape values later: edit your override, re-run step 3, then
 `flux reconcile helmrelease odg-infra`. Publishing a new chart version: bump the
 `ref.tag` in `flux/ocirepository.yaml` to the new published tag.
 
 ## Signing and verification
 
 The publish workflow (`.github/workflows/build.yaml`) signs the pushed chart with
-**cosign keyless** (GitHub Actions OIDC, Sigstore Fulcio/Rekor). `flux/ocirepository.yaml`
-enforces that signature via `verify.provider: cosign` and `matchOIDCIdentity`, pinned to
-this repo's build workflow:
+**cosign key-based signing** (`cosign sign --key env://COSIGN_KEY --tlog-upload=false`).
+The job intentionally has **no `id-token` permission**, so cosign has no ambient GitHub
+OIDC and produces a pure key signature (no Fulcio certificate). `flux/ocirepository.yaml`
+enforces it with `verify.provider: cosign` + `secretRef: cosign-pub`.
 
-```
-issuer:  https://token.actions.githubusercontent.com
-subject: ^https://github\.com/a-thaler/odg-ocp-btp-infra/\.github/workflows/build\.yaml@refs/.*$
-```
+Key-based (not keyless) is required because the managed Flux `source-controller` runs
+read-only with `HOME=/`, so keyless verify cannot write the Sigstore TUF trust root.
+Key-based verify is a local public-key check: no Sigstore/Rekor/TUF, no writable HOME.
 
-If verification fails, Flux refuses to pull the chart and the HelmRelease does not
-reconcile. Consequences to know:
+Setup:
 
-- A chart version is only verifiable if it was published **after** the cosign step
-  existed. Point `ref.tag` at such a version; earlier tags have no cosign signature and
-  will be rejected.
-- The `actions/attest` provenance (also produced) is SLSA build provenance, verified
-  separately with `gh attestation verify`. Flux does NOT consume it; only the cosign
-  signature gates reconciliation.
-- Keyless verify requires the control plane to reach Sigstore (Fulcio roots + Rekor).
-  If the cluster is network-restricted, switch to key-based cosign: sign with a private
-  key in CI and set `verify.secretRef` to a Secret holding `cosign.pub`.
+- **CI secrets** on the repo: `COSIGN_KEY` (private key PEM, raw), `COSIGN_PASSWORD`.
+  `ci.yaml` forwards them to the reusable `build.yaml` via `secrets: inherit` (reusable
+  workflows do NOT inherit secrets automatically).
+- **Cluster secret** `cosign-pub` in `flux-system`, holding the public key (see
+  Prerequisites). Generate the pair with `cosign generate-key-pair`; keep the private
+  key out of git.
 
-Manual check of a published chart:
+If verification fails, Flux sets `SourceVerified=False` and refuses to pull the chart, so
+the HelmRelease does not reconcile. Only tags published after the key-signing step exists
+are verifiable; point `ref.tag` at such a tag.
+
+Manual check of a published chart (key signature carries no tlog entry):
 
 ```bash
-cosign verify ghcr.io/a-thaler/odg/charts/odg-infra:<tag> \
-  --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp='^https://github.com/a-thaler/odg-ocp-btp-infra/.github/workflows/build.yaml@refs/.*$'
+cosign verify --key cosign.pub --insecure-ignore-tlog \
+  ghcr.io/a-thaler/odg/charts/odg-infra:<tag>
 ```
-
-## Accessing audit logs
-
-1. BTP Cockpit → Subaccount → Services → Instances and Subscriptions.
-2. Open "Audit Log Viewer" → "Go to Application".
-3. Requires the `Auditlog Viewer` role collection (assigned via `auditlog.viewers`).
-
-## Adding a shoot
-
-Append an entry to `shoots` in `secrets/values.yaml`, then re-apply the values Secret
-(step 2 above) and `flux reconcile helmrelease odg-infra`:
-
-```yaml
-shoots:
-  - name: my-shoot
-    # optional overrides:
-    # kubernetes:
-    #   version: "1.36.5"
-    # worker:
-    #   machineType: g_c16_m64
-```
-
-The shared `audit-policy` ConfigMap and `auditlog-credentials` Secret are reused by every
-shoot, so no per-shoot audit resources are needed.

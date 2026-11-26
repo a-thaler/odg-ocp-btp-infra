@@ -1,0 +1,70 @@
+# Example landscape override for the odg-infra chart.
+#
+# Copy this file, fill in your subaccount/landscape values, and supply it to the
+# HelmRelease as the `odg-infra-values` ConfigMap (see README "Prerequisites").
+# It overrides the defaults in charts/odg-infra/values.yaml. Keep your real copy
+# OUT of git.
+
+btp:
+  cliServerUrl: "https://canary.cli.btp.int.sap"   # BTP CLI server for your region
+  globalAccountId: "<global-account-guid>"
+
+subaccount:
+  name: "odg"
+  guid: "<subaccount-guid>"                         # also used as auditlog tenantID
+  displayName: "<subaccount-display-name>"
+  subdomain: "<subaccount-subdomain>"
+  region: "eu10-canary"
+  admins:
+    - first.last@example.com
+
+gardener:
+  gardenNamespace: "<garden-namespace>"             # e.g. garden-odgdev
+
+auditlog:
+  serviceUrl: "https://api.auditlog.cf.eu01-canary.hana.ondemand.com"
+  # Roles put into the "Auditlog Viewer" role collection. The roleTemplateAppId
+  # (the !bN/!tN suffix) is a per-subaccount constant; read it from the BTP
+  # authorization API (/sap/rest/authorization/v2/apps) for YOUR subaccount.
+  # Both roles are needed for the Audit Log Viewer UI to open.
+  roleCollectionRoles:
+    - name: "Auditlog_Auditor"
+      roleTemplateName: "Auditlog_Auditor"
+      roleTemplateAppId: "auditlog-management!bNN"
+    - name: "Auditlog_Auditor"
+      roleTemplateName: "Auditlog_Auditor"
+      roleTemplateAppId: "auditlog-viewer!tNN"
+  # Users assigned to the "Auditlog Viewer" collection (one assignment each).
+  viewers:
+    - name: first-last
+      email: first.last@example.com
+
+ias:
+  enabled: false
+
+shoots:
+  - name: dev-1
+
+# Shoot defaults for this landscape (OpenStack / monsoon3 eu-de-1 shown as example).
+shootDefaults:
+  kubernetes:
+    version: "1.36.5"
+  region: "eu-de-1"
+  cloudProfile: "converged-cloud-bs"
+  credentialsBindingName: "monsoon3-eu-de1"
+  floatingPoolName: "FloatingIP-external-monsoon3-06"
+  zones:
+    - "eu-de-1d"
+  worker:
+    machineType: "g_c8_m32_v2"
+    image:
+      name: "gardenlinux"
+      version: "2150.15.0"
+    min: 1
+    max: 2
+  purpose: "evaluation"
+  networking:
+    type: "cilium"
+    pods: "100.64.0.0/12"
+    nodes: "10.180.0.0/16"
+    services: "100.104.0.0/13"
