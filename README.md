@@ -153,13 +153,13 @@ connection details (host, port, user, password, database, TLS) to the Secret
 `postgres-<shoot>-credentials` in `secrets.outputNamespace`. Applications on that shoot
 consume the secret (replicate it into the shoot, or read it from the control plane).
 
-The chart also requests the subaccount **entitlements**, scaled by shoot count:
+The chart also requests the subaccount compute **entitlement** for the plan
+`postgres.plan` (`standard`), amount = number of shoots (doubled when
+`postgres.multiAz: true`). This landscape's `postgresql-db` offering exposes only the
+`standard` plan; storage is set through the `storageGB` instance parameter, not a separate
+entitlement SKU.
 
-- compute: plan `postgres.plan` (`standard` or `premium`), amount = shoots (doubled when
-  `postgres.multiAz: true`);
-- storage: `storage` (or `storage_ha` when `multiAz`), amount = shoots.
-
-The global account must have quota for these plans. `postgres.enabled: true` with an empty
+The global account must have quota for the plan. `postgres.enabled: true` with an empty
 `shoots` list fails rendering on purpose (nothing to attach a database to).
 
 Provisioning parameters map to the SAP service: `memory` (GB, standard allows 2 or 4),

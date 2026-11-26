@@ -7,32 +7,19 @@
 {{- end }}
 {{- $count := len $shoots }}
 {{- $computeMultiplier := ternary 2 1 $pg.multiAz }}
-{{- $storageSku := ternary "storage_ha" "storage" $pg.multiAz }}
-# Subaccount-wide entitlements for the per-shoot PostgreSQL instances. Compute SKU scales
-# with shoot count (doubled for multi-AZ); one storage SKU per shoot.
+# Subaccount-wide entitlement for the per-shoot PostgreSQL instances. This landscape's
+# postgresql-db offering exposes a single plan ("standard"); storage is an instance
+# parameter, not a separate entitlement SKU. Compute amount scales with shoot count
+# (doubled for multi-AZ).
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: Entitlement
 metadata:
-  name: {{ .Values.subaccount.name }}-postgresql-db-compute
+  name: {{ .Values.subaccount.name }}-postgresql-db
 spec:
   forProvider:
     serviceName: postgresql-db
     servicePlanName: {{ $pg.plan | quote }}
     amount: {{ mul $count $computeMultiplier }}
-    subaccountRef:
-      name: {{ include "odg-infra.subaccountRef" . }}
-  providerConfigRef:
-    name: {{ include "odg-infra.providerConfigName" . }}
----
-apiVersion: account.btp.sap.crossplane.io/v1alpha1
-kind: Entitlement
-metadata:
-  name: {{ .Values.subaccount.name }}-postgresql-db-storage
-spec:
-  forProvider:
-    serviceName: postgresql-db
-    servicePlanName: {{ $storageSku | quote }}
-    amount: {{ $count }}
     subaccountRef:
       name: {{ include "odg-infra.subaccountRef" . }}
   providerConfigRef:
