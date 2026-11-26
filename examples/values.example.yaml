@@ -22,49 +22,44 @@ gardener:
   gardenNamespace: "<garden-namespace>"             # e.g. garden-odgdev
 
 auditlog:
-  serviceUrl: "https://api.auditlog.cf.eu01-canary.hana.ondemand.com"
-  # Roles put into the "Auditlog Viewer" role collection. The roleTemplateAppId
-  # (the !bN/!tN suffix) is a per-subaccount constant; read it from the BTP
-  # authorization API (/sap/rest/authorization/v2/apps) for YOUR subaccount.
-  # Both roles are needed for the Audit Log Viewer UI to open.
-  roleCollectionRoles:
-    - name: "Auditlog_Auditor"
-      roleTemplateName: "Auditlog_Auditor"
-      roleTemplateAppId: "auditlog-management!bNN"
-    - name: "Auditlog_Auditor"
-      roleTemplateName: "Auditlog_Auditor"
-      roleTemplateAppId: "auditlog-viewer!tNN"
+  serviceUrl: "<service-url>"
   # Users assigned to the "Auditlog Viewer" collection (one assignment each).
   viewers:
     - name: first-last
       email: first.last@example.com
 
-ias:
-  enabled: false
+# Cloud Logging OpenSearch Dashboards SSO via IAS SAML 2.0 (OPTION 2, no request signing).
+# The IAS tenant and SAML application are configured manually (see README). No secret is
+# involved, all fields below are non-secret and live in this ConfigMap override.
+cloudLogging:
+  saml:
+    enabled: true
+    initiated: true
+    roles_key: "groups"
+    admin_group: "CLS_Admin"
+    idp:
+      metadata_url: "<ias-service-url>/saml2/metadata"
+      entity_id: "cls"
+    sp:
+      entity_id: "<saml-app-entity-id>"
 
 shoots:
   - name: dev-1
 
-# Shoot defaults for this landscape (OpenStack / monsoon3 eu-de-1 shown as example).
+# Shoot defaults for this landscape.
 shootDefaults:
   kubernetes:
     version: "1.36.5"
   region: "eu-de-1"
-  cloudProfile: "converged-cloud-bs"
-  credentialsBindingName: "monsoon3-eu-de1"
-  floatingPoolName: "FloatingIP-external-monsoon3-06"
+  cloudProfile: "<cloud-profile>"
+  credentialsBindingName: "<credentials-binding-name>"
   zones:
-    - "eu-de-1d"
+    - "<zone>"
   worker:
-    machineType: "g_c8_m32_v2"
+    machineType: "<machine-type>"
     image:
       name: "gardenlinux"
       version: "2150.15.0"
     min: 1
     max: 2
   purpose: "evaluation"
-  networking:
-    type: "cilium"
-    pods: "100.64.0.0/12"
-    nodes: "10.180.0.0/16"
-    services: "100.104.0.0/13"

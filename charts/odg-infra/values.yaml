@@ -49,8 +49,6 @@ gardener:
   # Name of the kubernetes.crossplane.io ProviderConfig the chart creates and the Shoot
   # Objects reference. Structural; keep unless you run multiple Gardener targets.
   providerConfigName: "gardener"
-  # Name of the manual secret (in secrets.namespace) holding the Gardener API kubeconfig.
-  kubeconfigSecretName: "gardener-kubeconfig"
   # Optional gardener-auth ProviderConfig (gardener.orchestrate.cloud.sap), for shoots
   # that request auto-rotating admin kubeconfigs. Enable only when provider-gardener-auth
   # is installed on the control plane.
@@ -64,13 +62,17 @@ gardener:
 secrets:
   namespace: "manual-secrets"
   # CIS credentials for the BTP provider.
-  cisCredentials: "cis-provider-secret"
-  cisCredentialsKey: "data"
+  cisCredentials:
+    name: "cis-provider-secret"
+    key: "data"
   # Service account credentials for the BTP provider.
-  serviceAccount: "sa-provider-secret"
-  serviceAccountKey: "credentials"
-  # Key inside gardener.kubeconfigSecretName holding the kubeconfig.
-  gardenerKubeconfigKey: "kubeconfig"
+  serviceAccount:
+    name: "sa-provider-secret"
+    key: "credentials"
+  # Service account kubeconfig for the Gardener API.
+  gardenerKubeconfig:
+    name: "gardener-kubeconfig"
+    key: "kubeconfig"
   # Namespace where the chart writes connection secrets (service bindings, xsuaa creds).
   outputNamespace: "default"
 
@@ -91,6 +93,25 @@ cloudLogging:
   retentionPeriod: 30     # days logs are retained
   maxDataInstances: 10    # OpenSearch data node cap
   maxIngestInstances: 10  # ingestion node cap
+  # OpenSearch Dashboards SSO via IAS SAML 2.0. The IAS tenant, the SAML application, the
+  # groups attribute, and the admin group are configured MANUALLY (see README). The chart
+  # only passes this saml block to the cloud-logging instance parameters. Disabled by
+  # default. This uses SAML "OPTION 2" (no request signing), so there is NO secret: every
+  # field below is non-secret and belongs in the plaintext values / ConfigMap.
+  saml:
+    enabled: false
+    initiated: true
+    roles_key: "groups"
+    # IAS group mapped to OpenSearch Dashboards all_access.
+    admin_group: "CLS_Admin"
+    idp:
+      # https://<tenant-host>/saml2/metadata (REQUIRED when enabled)
+      metadata_url: ""
+      # entityID from the IdP metadata, e.g. https://<tenant-host> (REQUIRED when enabled)
+      entity_id: ""
+    sp:
+      # Entity ID of the SAML application created in IAS (REQUIRED when enabled).
+      entity_id: "cls"
 
 # ---------------------------------------------------------------------------------------
 # SAP Audit Log: the service instance/binding, the Viewer subscription, the role
@@ -121,14 +142,6 @@ auditlog:
   # Users assigned to the collection; one RoleCollectionAssignment each.
   # Each entry: {name: "<identifier>", email: "<user@sap.com>"}.
   viewers: []
-
-# ---------------------------------------------------------------------------------------
-# IAS (Identity Authentication Service), additional-tenant plan. Disabled by default: the
-# plan needs a manual global-account entitlement before it can be provisioned.
-# ---------------------------------------------------------------------------------------
-ias:
-  enabled: false
-  cloudService: "PROD"    # tenant URL pattern passed to the service instance
 
 # ---------------------------------------------------------------------------------------
 # Identity provider origin used for role collection assignments. "sap.default" is the SAP

@@ -20,6 +20,21 @@ spec:
       maxDataInstances: {{ .Values.cloudLogging.maxDataInstances }}
       maxIngestInstances: {{ .Values.cloudLogging.maxIngestInstances }}
       retentionPeriod: {{ .Values.cloudLogging.retentionPeriod }}
+      {{- if .Values.cloudLogging.saml.enabled }}
+      # OpenSearch Dashboards SSO via IAS SAML 2.0 (OPTION 2, no request signing). The IAS
+      # tenant and SAML application are configured manually (see README). No secret is
+      # involved; all fields are supplied from non-secret values.
+      saml:
+        enabled: true
+        initiated: {{ .Values.cloudLogging.saml.initiated }}
+        roles_key: {{ .Values.cloudLogging.saml.roles_key | quote }}
+        admin_group: {{ .Values.cloudLogging.saml.admin_group | quote }}
+        idp:
+          metadata_url: {{ required "cloudLogging.saml.idp.metadata_url is required" .Values.cloudLogging.saml.idp.metadata_url | quote }}
+          entity_id: {{ required "cloudLogging.saml.idp.entity_id is required" .Values.cloudLogging.saml.idp.entity_id | quote }}
+        sp:
+          entity_id: {{ required "cloudLogging.saml.sp.entity_id is required" .Values.cloudLogging.saml.sp.entity_id | quote }}
+      {{- end }}
   providerConfigRef:
     name: {{ include "odg-infra.providerConfigName" . }}
 ---

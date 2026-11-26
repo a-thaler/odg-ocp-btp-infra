@@ -5,15 +5,15 @@ metadata:
 spec:
   cisCredentials:
     secretRef:
-      key: {{ .Values.secrets.cisCredentialsKey }}
-      name: {{ .Values.secrets.cisCredentials }}
+      key: {{ .Values.secrets.cisCredentials.key }}
+      name: {{ .Values.secrets.cisCredentials.name }}
       namespace: {{ .Values.secrets.namespace }}
     source: Secret
   cliServerUrl: {{ .Values.btp.cliServerUrl }}
   globalAccount: {{ required "btp.globalAccountId is required" .Values.btp.globalAccountId }}
   serviceAccountSecret:
     secretRef:
-      key: {{ .Values.secrets.serviceAccountKey }}
-      name: {{ .Values.secrets.serviceAccount }}
+      key: {{ .Values.secrets.serviceAccount.key }}
+      name: {{ .Values.secrets.serviceAccount.name }}
       namespace: {{ .Values.secrets.namespace }}
     source: Secret

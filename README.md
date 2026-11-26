@@ -40,7 +40,7 @@ examples/
 | **Cloud Logging** | Centralized logging (OpenTelemetry ingest enabled) |
 | **Audit Log Service** | Kubernetes API audit logs streamed to BTP |
 | **Audit Log Viewer** | UI + per-user `Auditlog Viewer` role collection assignments |
-| **IAS** | Identity Authentication Service (additional-tenant plan; disabled by default) |
+| **Cloud Logging SAML SSO** | Optional (`cloudLogging.saml.enabled`): sets SAML 2.0 parameters on the Cloud Logging instance so OpenSearch Dashboards use IAS single sign-on. The IAS tenant and SAML application are created manually; see below |
 | **Gardener ProviderConfig + RBAC** | Lets the Crossplane kubernetes provider manage Shoots and read BTP resources |
 | **Shared audit resources** | One `audit-policy` ConfigMap + `auditlog-credentials` Secret in the garden namespace |
 | **Gardener Shoot** | Kubernetes cluster on OpenStack (cilium networking) |
@@ -50,6 +50,38 @@ examples/
 Landscape-specific configuration is an override on top of the chart defaults in
 `charts/odg-infra/values.yaml`. Copy `examples/values.example.yaml`, fill it in, and
 supply it as the `odg-infra-values` ConfigMap (see Prerequisites / Flux deployment).
+
+## Cloud Logging OpenSearch Dashboards SSO (IAS SAML 2.0)
+
+OpenSearch Dashboards can use IAS SAML 2.0 single sign-on. The IAS tenant and the SAML
+application are set up **manually**; the chart only writes the resulting `saml` parameters
+onto the Cloud Logging instance. This uses SAML **OPTION 2** (no request signing), so **no
+secret is involved**, every value is non-secret and lives in the `odg-infra-values`
+ConfigMap.
+
+**Manual setup (once per landscape):**
+
+1. Request the IAS `additional-tenant` as a **named administrator** via the BTP cockpit or
+   SAP for Me (Services > Service Marketplace > Cloud Identity Services > `additional-tenant`
+   plan > Create). Only a request made by a human user triggers an activation email, making
+   that user the tenant's initial administrator. Activate your account from the email.
+2. Note the IdP information: `idp.metadata_url` = `https://<tenant-host>/saml2/metadata`, and
+   `idp.entity_id` = the `entityID` value from that metadata.
+3. Create a SAML 2.0 application in IAS. Note its `Entity ID` (this is `sp.entity_id`).
+4. Configure the application: define a self-asserted `groups` user attribute so group
+   membership is emitted (maps to `roles_key: groups`), set Default Name ID Format = Email.
+5. Set the Assertion Consumer Service endpoint to
+   `https://<dashboards-endpoint>/_opendistro/_security/saml/acs` and the Single Logout
+   endpoint (HTTP-Redirect) to `https://<dashboards-endpoint>` (no trailing path). Read
+   `<dashboards-endpoint>` from the `cloud-logging-credentials` secret (`dashboards-endpoint`
+   key). This step can only be done after the Cloud Logging instance exists.
+6. Create the admin group (`cloudLogging.saml.admin_group`, default `CLS_Admin`) and assign
+   the users who should get OpenSearch Dashboards `all_access`.
+
+**Chart configuration:** set `cloudLogging.saml.enabled: true` and fill in the `saml` block
+under `cloudLogging.saml` (`initiated`, `roles_key`, `admin_group`, `idp.metadata_url`,
+`idp.entity_id`, `sp.entity_id`). The chart passes this `saml` block to the Cloud Logging
+instance parameters. No Secret and no `parameterSecretRefs` are created.
 
 ## Prerequisites (control plane)
 
@@ -72,7 +104,12 @@ deploy steps below):
 |--------|------|---------|
 | `ghcr-pull` | Secret (dockerconfigjson) | Pulls the chart from the private GHCR package |
 | `cosign-pub` | Secret | Public key for the OCIRepository cosign verify; missing → `SourceVerified=False` |
-| `odg-infra-values` | ConfigMap | The landscape override the HelmRelease reads via `valuesFrom` |
+| `odg-infra-values` | ConfigMap | Non-secret landscape override the HelmRelease reads via `valuesFrom` |
+| `odg-infra-secret-values` | Secret (optional) | Any sensitive landscape values, merged on top of the ConfigMap. Not needed for the SAML OPTION 2 SSO, which has no secret |
+
+When `cloudLogging.saml.enabled` is set, the IAS tenant and SAML application must already
+exist and their values be supplied (see "Cloud Logging OpenSearch Dashboards SSO" above).
+The chart does not create them.
 
 ## Rendering and validation
 
@@ -117,6 +154,14 @@ kubectl -n flux-system create secret generic cosign-pub \
 # 3. Landscape override as a ConfigMap (the HelmRelease reads it via valuesFrom).
 kubectl -n flux-system create configmap odg-infra-values \
   --from-file=values.yaml=my-values.yaml \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# 3b. OPTIONAL: any sensitive landscape values as a Secret, kept out of the ConfigMap.
+#     my-secret-values.yaml is a minimal values file with only the sensitive keys.
+#     The SAML OPTION 2 SSO needs no secret, so skip this unless you have other sensitive
+#     overrides.
+kubectl -n flux-system create secret generic odg-infra-secret-values \
+  --from-file=values.yaml=my-secret-values.yaml \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # 4. The committed Flux resources (OCIRepository + HelmRelease).

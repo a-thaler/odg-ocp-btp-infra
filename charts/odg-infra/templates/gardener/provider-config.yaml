@@ -7,5 +7,5 @@ spec:
     source: Secret
     secretRef:
       namespace: {{ .Values.secrets.namespace }}
-      name: {{ .Values.gardener.kubeconfigSecretName }}
-      key: {{ .Values.secrets.gardenerKubeconfigKey }}
+      name: {{ .Values.secrets.gardenerKubeconfig.name }}
+      key: {{ .Values.secrets.gardenerKubeconfig.key }}
