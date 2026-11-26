@@ -54,6 +54,10 @@ spec:
               auditPolicy:
                 configMapRef:
                   name: audit-policy
+            {{- if $.Values.shootOidc.enabled }}
+            structuredAuthentication:
+              configMapName: shoot-{{ $shoot.name }}-oidc
+            {{- end }}
           kubeControllerManager:
             nodeCIDRMaskSize: 24
             nodeMonitorGracePeriod: 40s

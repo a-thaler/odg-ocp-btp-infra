@@ -11,7 +11,7 @@ spec:
     operation: copy
   ref:
     # Pin to a published chart version. Update on each release.
-    tag: "0.1.0-1795699485"
+    tag: "0.1.0-1795699658"
   # GHCR package is private -> Flux needs a pull secret (see README / secrets).
   # Delete this block if you make the package public.
   secretRef:

@@ -30,10 +30,10 @@ spec:
         roles_key: {{ .Values.cloudLogging.saml.roles_key | quote }}
         admin_group: {{ .Values.cloudLogging.saml.admin_group | quote }}
         idp:
-          metadata_url: {{ required "cloudLogging.saml.idp.metadata_url is required" .Values.cloudLogging.saml.idp.metadata_url | quote }}
-          entity_id: {{ required "cloudLogging.saml.idp.entity_id is required" .Values.cloudLogging.saml.idp.entity_id | quote }}
+          metadata_url: {{ include "odg-infra.ias.samlMetadataUrl" . | quote }}
+          entity_id: {{ include "odg-infra.ias.samlEntityId" . | quote }}
         sp:
-          entity_id: {{ required "cloudLogging.saml.sp.entity_id is required" .Values.cloudLogging.saml.sp.entity_id | quote }}
+          entity_id: {{ required "cloudLogging.saml.spEntityId is required" .Values.cloudLogging.saml.spEntityId | quote }}
       {{- end }}
   providerConfigRef:
     name: {{ include "odg-infra.providerConfigName" . }}

@@ -28,20 +28,30 @@ auditlog:
     - name: first-last
       email: first.last@example.com
 
-# Cloud Logging OpenSearch Dashboards SSO via IAS SAML 2.0 (OPTION 2, no request signing).
-# The IAS tenant and SAML application are configured manually (see README). No secret is
-# involved, all fields below are non-secret and live in this ConfigMap override.
+# SAP Cloud Identity Services (IAS): one place for the manual tenant. The features below
+# derive their URLs from ias.tenantHost.
+ias:
+  tenantHost: "afxpmzrgq.accounts400.ondemand.com"
+
+# Cloud Logging OpenSearch Dashboards SSO via IAS SAML 2.0 (OPTION 2, no secret). IdP URLs
+# are derived from ias.tenantHost; provide only the SAML app's entity id and admin group.
 cloudLogging:
   saml:
     enabled: true
     initiated: true
     roles_key: "groups"
     admin_group: "CLS_Admin"
-    idp:
-      metadata_url: "<ias-service-url>/saml2/metadata"
-      entity_id: "cls"
-    sp:
-      entity_id: "<saml-app-entity-id>"
+    spEntityId: "cls"
+
+# OIDC access to the shoot kube-apiserver via the manual IAS tenant. Issuer is derived from
+# ias.tenantHost; provide the OIDC app's client id. RBAC is applied manually per shoot.
+shootOidc:
+  enabled: true
+  clientID: "<shoot-oidc-client-id>"
+  usernameClaim: "email"
+  usernamePrefix: "ias:"
+  groupsClaim: "groups"
+  groupsPrefix: "ias:"
 
 shoots:
   - name: dev-1

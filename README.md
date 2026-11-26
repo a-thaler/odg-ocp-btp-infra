@@ -44,12 +44,27 @@ examples/
 | **Gardener ProviderConfig + RBAC** | Lets the Crossplane kubernetes provider manage Shoots and read BTP resources |
 | **Shared audit resources** | One `audit-policy` ConfigMap + `auditlog-credentials` Secret in the garden namespace |
 | **Gardener Shoot** | Kubernetes cluster on OpenStack (cilium networking) |
+| **Shoot OIDC access** | Optional (`shootOidc.enabled`): per-shoot Structured Authentication ConfigMap trusting the IAS tenant, so users access the kube-apiserver with IAS tokens; RBAC applied manually; see below |
 
 ## Values
 
 Landscape-specific configuration is an override on top of the chart defaults in
 `charts/odg-infra/values.yaml`. Copy `examples/values.example.yaml`, fill it in, and
 supply it as the `odg-infra-values` ConfigMap (see Prerequisites / Flux deployment).
+
+## SAP Cloud Identity Services (IAS)
+
+The IAS tenant is managed manually (not by the chart). Enter the tenant host once under
+`ias.tenantHost` (e.g. `afxpmzrgq.accounts400.ondemand.com`); it is the single source of
+truth for the IAS-backed features below. They derive their URLs from it:
+
+- SAML IdP metadata URL = `https://<ias.tenantHost>/saml2/metadata`
+- SAML IdP entity ID = `https://<ias.tenantHost>`
+- OIDC issuer = `https://<ias.tenantHost>/`
+
+Each feature can still override its URL explicitly (`cloudLogging.saml.idp.metadataUrl` /
+`.entityId`, `shootOidc.issuerUrl`) if a landscape is unusual, but normally you only set
+`ias.tenantHost` plus the per-application identifiers.
 
 ## Cloud Logging OpenSearch Dashboards SSO (IAS SAML 2.0)
 
@@ -64,24 +79,69 @@ ConfigMap.
 1. Request the IAS `additional-tenant` as a **named administrator** via the BTP cockpit or
    SAP for Me (Services > Service Marketplace > Cloud Identity Services > `additional-tenant`
    plan > Create). Only a request made by a human user triggers an activation email, making
-   that user the tenant's initial administrator. Activate your account from the email.
-2. Note the IdP information: `idp.metadata_url` = `https://<tenant-host>/saml2/metadata`, and
-   `idp.entity_id` = the `entityID` value from that metadata.
-3. Create a SAML 2.0 application in IAS. Note its `Entity ID` (this is `sp.entity_id`).
-4. Configure the application: define a self-asserted `groups` user attribute so group
+   that user the tenant's initial administrator. Activate your account from the email. Put
+   the tenant host in `ias.tenantHost`.
+2. Create a SAML 2.0 application in IAS. Note its `Entity ID` (this is `cloudLogging.saml.spEntityId`).
+3. Configure the application: define a self-asserted `groups` user attribute so group
    membership is emitted (maps to `roles_key: groups`), set Default Name ID Format = Email.
-5. Set the Assertion Consumer Service endpoint to
+4. Set the Assertion Consumer Service endpoint to
    `https://<dashboards-endpoint>/_opendistro/_security/saml/acs` and the Single Logout
    endpoint (HTTP-Redirect) to `https://<dashboards-endpoint>` (no trailing path). Read
    `<dashboards-endpoint>` from the `cloud-logging-credentials` secret (`dashboards-endpoint`
    key). This step can only be done after the Cloud Logging instance exists.
-6. Create the admin group (`cloudLogging.saml.admin_group`, default `CLS_Admin`) and assign
+5. Create the admin group (`cloudLogging.saml.admin_group`, default `CLS_Admin`) and assign
    the users who should get OpenSearch Dashboards `all_access`.
 
 **Chart configuration:** set `cloudLogging.saml.enabled: true` and fill in the `saml` block
-under `cloudLogging.saml` (`initiated`, `roles_key`, `admin_group`, `idp.metadata_url`,
-`idp.entity_id`, `sp.entity_id`). The chart passes this `saml` block to the Cloud Logging
+under `cloudLogging.saml` (`initiated`, `roles_key`, `admin_group`, `spEntityId`). The IdP
+URLs come from `ias.tenantHost`. The chart passes the `saml` block to the Cloud Logging
 instance parameters. No Secret and no `parameterSecretRefs` are created.
+
+## Shoot cluster access via IAS OIDC (Structured Authentication)
+
+Set `shootOidc.enabled: true` to let users authenticate to the shoots' kube-apiserver with
+tokens from the manual IAS tenant, with an IAS group driving Kubernetes group membership.
+The chart uses Kubernetes Structured Authentication (k8s >= 1.30): for each shoot it renders
+an `AuthenticationConfiguration` ConfigMap into the garden namespace and sets
+`spec.kubernetes.kubeAPIServer.structuredAuthentication.configMapName` on the shoot to
+reference it. No secret is involved, the kube-apiserver only validates tokens.
+
+**Manual IAS setup (once per landscape):**
+
+1. In the IAS tenant, create an **OpenID Connect application** for shoot access. Note the
+   client id (this is the token `audiences` value). The issuer is `https://<ias.tenantHost>/`
+   and must match the token `iss` claim (including trailing slash).
+2. Add a self-defined `groups` attribute to the application so group membership is emitted
+   in the token, and set the subject/Name ID to email.
+3. Create the IAS group (e.g. `Shoot-Admin`) and assign the users who should get access.
+4. Users authenticate with an OIDC `kubectl` plugin (e.g. `kubectl oidc-login` /
+   `kubelogin`) against the IAS issuer and client id.
+
+**Chart configuration:** set `shootOidc.enabled: true` and supply `clientID` (and optionally
+the claim names/prefixes). The issuer is derived from `ias.tenantHost`. With the defaults, an
+IAS user `jane@sap.com` in group `Shoot-Admin` is seen by the shoot apiserver as username
+`ias:jane@sap.com` in group `ias:Shoot-Admin`.
+
+**Manual RBAC (once per shoot):** the OIDC config only authenticates; it grants no
+permissions. Bind the prefixed group to a role in each shoot cluster, for example:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ias-shoot-admins
+subjects:
+  - kind: Group
+    name: "ias:Shoot-Admin"      # groupsPrefix + IAS group name
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin           # or a narrower role
+  apiGroup: rbac.authorization.k8s.io
+```
+
+Apply it with a shoot `adminkubeconfig` (see Gardener docs). Changing the ConfigMap later
+is picked up on the next shoot reconciliation, which is not automatically triggered.
 
 ## Prerequisites (control plane)
 
