@@ -26,10 +26,14 @@ spec:
     name: {{ .Values.auditlog.roleCollectionName | quote }}
     description: "View SAP Audit Log Service logs"
     roles:
+      {{- if .Values.auditlog.roleCollectionRoles }}
       {{- range .Values.auditlog.roleCollectionRoles }}
       - name: {{ .name | quote }}
         roleTemplateAppId: {{ required "auditlog.roleCollectionRoles[].roleTemplateAppId is required" .roleTemplateAppId | quote }}
         roleTemplateName: {{ .roleTemplateName | quote }}
+      {{- end }}
+      {{- else }}
+      []
       {{- end }}
   subaccountApiCredentialRef:
     name: {{ .Values.subaccount.name }}-xsuaa-credentials
