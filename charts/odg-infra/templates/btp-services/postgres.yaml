@@ -6,22 +6,39 @@
 {{- fail "postgres.enabled is true but shoots is empty; a PostgreSQL instance is created per shoot" }}
 {{- end }}
 {{- $count := len $shoots }}
+# PostgreSQL (SCI regions) requires TWO entitlements per the SAP sizing table: the compute
+# SKU (the chosen plan, standard/premium) and a separate storage SKU. Units are counted per
+# INSTANCE, not by disk GB (disk is an in-instance parameter in 5GB blocks). Compute units
+# scale with RAM: standard = memory/2 per instance (2GB->1, 4GB->2); multi-AZ doubles the
+# compute SKU and switches the storage SKU to storage_ha. Storage SKU is 1 per instance.
 {{- $computeMultiplier := ternary 2 1 $pg.multiAz }}
-# Subaccount-wide entitlement for the per-shoot PostgreSQL instances. This landscape's
-# postgresql-db offering exposes a single plan ("standard"); the entitlement "amount" is
-# denominated in storage (GB), not instance count. Default quota covers every shoot's
-# instance storage (doubled for multi-AZ); override with postgres.storageEntitlementGB.
-{{- $defaultStorageQuota := mul $count $pg.storageGB $computeMultiplier }}
-{{- $storageQuota := $pg.storageEntitlementGB | default $defaultStorageQuota }}
+{{- $computePerInstance := div $pg.memory 2 }}
+{{- $computeAmount := mul $count $computePerInstance $computeMultiplier }}
+{{- $storagePlan := ternary "storage_ha" "storage" $pg.multiAz }}
+{{- $storageAmount := $count }}
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: Entitlement
 metadata:
-  name: {{ .Values.subaccount.name }}-postgresql-db
+  name: {{ .Values.subaccount.name }}-postgresql-db-compute
 spec:
   forProvider:
     serviceName: postgresql-db
     servicePlanName: {{ $pg.plan | quote }}
-    amount: {{ $storageQuota }}
+    amount: {{ $computeAmount }}
+    subaccountRef:
+      name: {{ include "odg-infra.subaccountRef" . }}
+  providerConfigRef:
+    name: {{ include "odg-infra.providerConfigName" . }}
+---
+apiVersion: account.btp.sap.crossplane.io/v1alpha1
+kind: Entitlement
+metadata:
+  name: {{ .Values.subaccount.name }}-postgresql-db-storage
+spec:
+  forProvider:
+    serviceName: postgresql-db
+    servicePlanName: {{ $storagePlan | quote }}
+    amount: {{ $storageAmount }}
     subaccountRef:
       name: {{ include "odg-infra.subaccountRef" . }}
   providerConfigRef:
