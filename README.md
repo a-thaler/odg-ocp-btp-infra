@@ -6,6 +6,11 @@ single Helm chart, published as a signed OCI artifact, and deployed by Flux. One
 are supplied as an override (see `examples/values.example.yaml`) delivered to the chart
 as a ConfigMap, kept out of git.
 
+Before the chart can reconcile, a human prepares the subaccount once: provider credential
+secrets, the IAS tenant and its applications, and the PostgreSQL entitlements. That one-time
+setup is documented separately in [Preparing the subaccount](docs/SUBACCOUNT.md); this
+README covers the chart itself.
+
 ## Structure
 
 ```
@@ -25,6 +30,8 @@ flux/                               # committed Flux resources
 └── kustomization.yaml              # bundles the two above
 examples/
 └── values.example.yaml            # template landscape override (copy, fill in, keep out of git)
+docs/
+└── SUBACCOUNT.md                  # one-time manual subaccount/landscape preparation
 .github/workflows/
 ├── ci.yaml                         # entrypoint: compute version, call build.yaml (secrets: inherit)
 └── build.yaml                      # package, push, cosign key-sign the chart
@@ -40,12 +47,12 @@ examples/
 | **Cloud Logging** | Centralized logging (OpenTelemetry ingest enabled) |
 | **Audit Log Service** | Kubernetes API audit logs streamed to BTP |
 | **Audit Log Viewer** | UI + per-user `Auditlog Viewer` role collection assignments |
-| **Cloud Logging SAML SSO** | Optional (`cloudLogging.saml.enabled`): sets SAML 2.0 parameters on the Cloud Logging instance so OpenSearch Dashboards use IAS single sign-on. The IAS tenant and SAML application are created manually; see below |
+| **Cloud Logging SAML SSO** | Optional (`cloudLogging.saml.enabled`): sets SAML 2.0 parameters on the Cloud Logging instance so OpenSearch Dashboards use IAS single sign-on. The IAS tenant and SAML application are created manually (see [Preparing the subaccount](docs/SUBACCOUNT.md)) |
 | **Gardener ProviderConfig + RBAC** | Lets the Crossplane kubernetes provider manage Shoots and read BTP resources |
 | **Shared audit resources** | One `audit-policy` ConfigMap + `auditlog-credentials` Secret in the garden namespace, wiring the shoots' kube-apiserver audit log (see [Gardener: Auditing Kubernetes API server](https://pages.github.tools.sap/kubernetes/gardener/docs/guides/sap-internal/cluster-operations/audit-kube-apiserver/)) |
 | **Gardener Shoot** | Kubernetes cluster on OpenStack (cilium networking) |
-| **Shoot OIDC access** | Optional (`shootOidc.enabled`): per-shoot Structured Authentication ConfigMap trusting the IAS tenant, so users access the kube-apiserver with IAS tokens; RBAC applied manually; see below |
-| **PostgreSQL per shoot** | Optional (`postgres.enabled`): one `postgresql-db` (SCI) ServiceInstance + ServiceBinding per shoot, plus the subaccount entitlement (scaled by shoot count). Connection secret `postgres-<shoot>-credentials`; see below |
+| **Shoot OIDC access** | Optional (`shootOidc.enabled`): per-shoot Structured Authentication ConfigMap trusting the IAS tenant, so users access the kube-apiserver with IAS tokens; RBAC applied manually (see [Preparing the subaccount](docs/SUBACCOUNT.md)) |
+| **PostgreSQL per shoot** | Optional (`postgres.enabled`): one `postgresql-db` (SCI) ServiceInstance + ServiceBinding per shoot, plus the compute and storage entitlements. Connection secret `postgres-<shoot>-credentials`; see below |
 
 ## Values
 
@@ -53,96 +60,16 @@ Landscape-specific configuration is an override on top of the chart defaults in
 `charts/odg-infra/values.yaml`. Copy `examples/values.example.yaml`, fill it in, and
 supply it as the `odg-infra-values` ConfigMap (see Prerequisites / Flux deployment).
 
-## SAP Cloud Identity Services (IAS)
+## IAS-backed features
 
-The IAS tenant is managed manually (not by the chart). Enter the tenant host once under
-`ias.tenantHost` (e.g. `afxpmzrgq.accounts400.ondemand.com`); it is the single source of
-truth for the IAS-backed features below. They derive their URLs from it:
-
-- SAML IdP metadata URL = `https://<ias.tenantHost>/saml2/metadata`
-- SAML IdP entity ID = `https://<ias.tenantHost>`
-- OIDC issuer = `https://<ias.tenantHost>/`
-
-Each feature can still override its URL explicitly (`cloudLogging.saml.idp.metadataUrl` /
-`.entityId`, `shootOidc.issuerUrl`) if a landscape is unusual, but normally you only set
-`ias.tenantHost` plus the per-application identifiers.
-
-## Cloud Logging OpenSearch Dashboards SSO (IAS SAML 2.0)
-
-OpenSearch Dashboards can use IAS SAML 2.0 single sign-on. The IAS tenant and the SAML
-application are set up **manually**; the chart only writes the resulting `saml` parameters
-onto the Cloud Logging instance. This uses SAML **OPTION 2** (no request signing), so **no
-secret is involved**, every value is non-secret and lives in the `odg-infra-values`
-ConfigMap.
-
-**Manual setup (once per landscape):**
-
-1. Request the IAS `additional-tenant` as a **named administrator** via the BTP cockpit or
-   SAP for Me (Services > Service Marketplace > Cloud Identity Services > `additional-tenant`
-   plan > Create). Only a request made by a human user triggers an activation email, making
-   that user the tenant's initial administrator. Activate your account from the email. Put
-   the tenant host in `ias.tenantHost`.
-2. Create a SAML 2.0 application in IAS. Note its `Entity ID` (this is `cloudLogging.saml.spEntityId`).
-3. Configure the application: define a self-asserted `groups` user attribute so group
-   membership is emitted (maps to `roles_key: groups`), set Default Name ID Format = Email.
-4. Set the Assertion Consumer Service endpoint to
-   `https://<dashboards-endpoint>/_opendistro/_security/saml/acs` and the Single Logout
-   endpoint (HTTP-Redirect) to `https://<dashboards-endpoint>` (no trailing path). Read
-   `<dashboards-endpoint>` from the `cloud-logging-credentials` secret (`dashboards-endpoint`
-   key). This step can only be done after the Cloud Logging instance exists.
-5. Create the admin group (`cloudLogging.saml.admin_group`, default `CLS_Admin`) and assign
-   the users who should get OpenSearch Dashboards `all_access`.
-
-**Chart configuration:** set `cloudLogging.saml.enabled: true` and fill in the `saml` block
-under `cloudLogging.saml` (`initiated`, `roles_key`, `admin_group`, `spEntityId`). The IdP
-URLs come from `ias.tenantHost`. The chart passes the `saml` block to the Cloud Logging
-instance parameters. No Secret and no `parameterSecretRefs` are created.
-
-## Shoot cluster access via IAS OIDC (Structured Authentication)
-
-Set `shootOidc.enabled: true` to let users authenticate to the shoots' kube-apiserver with
-tokens from the manual IAS tenant, with an IAS group driving Kubernetes group membership.
-The chart uses Kubernetes Structured Authentication (k8s >= 1.30): for each shoot it renders
-an `AuthenticationConfiguration` ConfigMap into the garden namespace and sets
-`spec.kubernetes.kubeAPIServer.structuredAuthentication.configMapName` on the shoot to
-reference it. No secret is involved, the kube-apiserver only validates tokens.
-
-**Manual IAS setup (once per landscape):**
-
-1. In the IAS tenant, create an **OpenID Connect application** for shoot access. Note the
-   client id (this is the token `audiences` value). The issuer is `https://<ias.tenantHost>/`
-   and must match the token `iss` claim (including trailing slash).
-2. Add a self-defined `groups` attribute to the application so group membership is emitted
-   in the token, and set the subject/Name ID to email.
-3. Create the IAS group (e.g. `Shoot-Admin`) and assign the users who should get access.
-4. Users authenticate with an OIDC `kubectl` plugin (e.g. `kubectl oidc-login` /
-   `kubelogin`) against the IAS issuer and client id.
-
-**Chart configuration:** set `shootOidc.enabled: true` and supply `clientID` (and optionally
-the claim names/prefixes). The issuer is derived from `ias.tenantHost`. With the defaults, an
-IAS user `jane@sap.com` in group `Shoot-Admin` is seen by the shoot apiserver as username
-`ias:jane@sap.com` in group `ias:Shoot-Admin`.
-
-**Manual RBAC (once per shoot):** the OIDC config only authenticates; it grants no
-permissions. Bind the prefixed group to a role in each shoot cluster, for example:
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: ias-shoot-admins
-subjects:
-  - kind: Group
-    name: "ias:Shoot-Admin"      # groupsPrefix + IAS group name
-    apiGroup: rbac.authorization.k8s.io
-roleRef:
-  kind: ClusterRole
-  name: cluster-admin           # or a narrower role
-  apiGroup: rbac.authorization.k8s.io
-```
-
-Apply it with a shoot `adminkubeconfig` (see Gardener docs). Changing the ConfigMap later
-is picked up on the next shoot reconciliation, which is not automatically triggered.
+Cloud Logging SAML SSO (`cloudLogging.saml.enabled`) and shoot OIDC access
+(`shootOidc.enabled`) rely on a SAP Cloud Identity Services tenant that is managed
+manually, not by the chart. Set `ias.tenantHost` once as the single source of truth for the
+derived IdP URLs (SAML metadata/entity ID, OIDC issuer), each overridable per feature. The
+chart only writes the resulting parameters onto the Cloud Logging instance and the shoot
+`AuthenticationConfiguration`; it creates no IAS objects and no secrets (SAML OPTION 2, no
+request signing). The one-time tenant, SAML-application, OIDC-application, and per-shoot
+RBAC setup is in [Preparing the subaccount](docs/SUBACCOUNT.md).
 
 ## PostgreSQL database per shoot
 
@@ -153,19 +80,18 @@ connection details (host, port, user, password, database, TLS) to the Secret
 `postgres-<shoot>-credentials` in `secrets.outputNamespace`. Applications on that shoot
 consume the secret (replicate it into the shoot, or read it from the control plane).
 
-The chart also requests the subaccount compute **entitlement** for the plan
-`postgres.plan` (`standard`), amount = number of shoots (doubled when
-`postgres.multiAz: true`). This landscape's `postgresql-db` offering exposes only the
-`standard` plan; storage is set through the `storageGB` instance parameter, not a separate
-entitlement SKU.
-
-The global account must have quota for the plan. `postgres.enabled: true` with an empty
-`shoots` list fails rendering on purpose (nothing to attach a database to).
+The chart also renders the required BTP entitlements (a compute SKU and a storage SKU,
+amounts derived from shoot count, RAM, and `multiAz`). The global account must hold quota
+for both SKUs. `postgres.enabled: true` with an empty `shoots` list fails rendering on
+purpose (nothing to attach a database to).
 
 Provisioning parameters map to the SAP service: `memory` (GB, standard allows 2 or 4),
 `storageGB` (multiple of 5), `engineVersion` (SCI: 15 or 17), `multiAz`, and
 `backupRetentionDays` (SCI range 0 to 14). SCI does not support engine-version upgrades or
-single-AZ to multi-AZ conversion after creation. For the full parameter reference see
+single-AZ to multi-AZ conversion after creation. For the entitlement model, global-account
+quota, and manual-instance access control (`public_access` / `allow_access`), see
+[Preparing the subaccount](docs/SUBACCOUNT.md#postgresql-entitlements-and-manual-instances).
+For the full parameter reference see
 [PostgreSQL, hyperscaler option: Parameters](https://help.sap.com/docs/postgresql-on-sap-btp/postgresql-on-sap-btp-hyperscaler-option/parameters?locale=en-US).
 
 ## Prerequisites (control plane)
@@ -173,14 +99,9 @@ single-AZ to multi-AZ conversion after creation. For the full parameter referenc
 These must exist on the control plane before Flux reconciles the chart. Flux (source +
 helm controllers) is assumed already running in `flux-system`.
 
-Manual secrets in the `manual-secrets` namespace (credentials for the Crossplane providers,
-managed out-of-band):
-
-| Secret | Key | Purpose |
-|--------|-----|---------|
-| `cis-provider-secret` | `data` | CIS credentials for the BTP provider |
-| `sa-provider-secret` | `credentials` | Service account credentials for the BTP provider |
-| `gardener-kubeconfig` | `kubeconfig` | Service account kubeconfig for the Gardener API (garden namespace) |
+The manual provider credential secrets in the `manual-secrets` namespace
+(`cis-provider-secret`, `sa-provider-secret`, `gardener-kubeconfig`) must exist first; see
+[Preparing the subaccount](docs/SUBACCOUNT.md#provider-credential-secrets).
 
 Objects in `flux-system` that the OCIRepository / HelmRelease depend on (created by the
 deploy steps below):
@@ -192,9 +113,9 @@ deploy steps below):
 | `odg-infra-values` | ConfigMap | Non-secret landscape override the HelmRelease reads via `valuesFrom` |
 | `odg-infra-secret-values` | Secret (optional) | Any sensitive landscape values, merged on top of the ConfigMap. Not needed for the SAML OPTION 2 SSO, which has no secret |
 
-When `cloudLogging.saml.enabled` is set, the IAS tenant and SAML application must already
-exist and their values be supplied (see "Cloud Logging OpenSearch Dashboards SSO" above).
-The chart does not create them.
+When `cloudLogging.saml.enabled` or `shootOidc.enabled` is set, the IAS tenant and its
+applications must already exist and their values be supplied; see
+[Preparing the subaccount](docs/SUBACCOUNT.md). The chart does not create them.
 
 ## Rendering and validation
 

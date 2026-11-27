@@ -3,7 +3,7 @@
 {{- $pg := .Values.postgres }}
 {{- $shoots := .Values.shoots }}
 {{- if not $shoots }}
-{{- fail "postgres.enabled is true but shoots is empty; a PostgreSQL instance is created per shoot" }}
+{{- fail "postgres.enabled is true but shoots is empty; entitlements are sized per shoot" }}
 {{- end }}
 {{- $count := len $shoots }}
 # PostgreSQL (SCI regions) requires TWO entitlements per the SAP sizing table: the compute
@@ -43,6 +43,7 @@ spec:
       name: {{ include "odg-infra.subaccountRef" . }}
   providerConfigRef:
     name: {{ include "odg-infra.providerConfigName" . }}
+{{- if $pg.createInstances }}
 {{- range $shoots }}
 {{- $shoot := . }}
 ---
@@ -84,5 +85,6 @@ spec:
   writeConnectionSecretToRef:
     name: {{ $pg.bindingPrefix }}-{{ $shoot.name }}-credentials
     namespace: {{ $root.Values.secrets.outputNamespace }}
+{{- end }}
 {{- end }}
 {{- end }}

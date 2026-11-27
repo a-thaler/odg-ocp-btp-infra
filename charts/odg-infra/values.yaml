@@ -219,7 +219,13 @@ shootDefaults: {}
 # The subaccount must have quota for the postgresql-db plan in the global account.
 # ---------------------------------------------------------------------------------------
 postgres:
+  # Master switch for the postgresql-db feature. When true, the subaccount compute + storage
+  # entitlements are rendered (sized to the shoot count). Instances are additionally gated by
+  # createInstances below.
   enabled: false
+  # When true, a ServiceInstance + ServiceBinding is created per shoot. When false, only the
+  # entitlements are rendered (reserve quota without provisioning databases).
+  createInstances: false
   # Service plan: "standard" (1 vCPU:2GB) or "premium" (1 vCPU:4GB).
   plan: "standard"
   # Prefix for the per-shoot connection secret and instance/binding names.
