@@ -27,11 +27,11 @@ subaccount:
   # Crossplane resource name (used for cross-references in the chart). Rarely changed.
   name: "odg"
   # Subaccount GUID. Set as the external-name (adoption) AND reused as the auditlog
-  # tenantID. Example: "73a5482f-6be1-4253-976e-32b1dbccc9b9".
+  # tenantID. Example: "00000000-0000-0000-0000-000000000000".
   guid: ""                # REQUIRED (landscape)
   # Cockpit display name and subdomain of the subaccount.
-  displayName: ""         # REQUIRED (landscape), e.g. "infra-odg-dev-sap"
-  subdomain: ""           # REQUIRED (landscape), e.g. "infra-odg-dev-sap"
+  displayName: ""         # REQUIRED (landscape), e.g. "my-subaccount"
+  subdomain: ""           # REQUIRED (landscape), e.g. "my-subaccount"
   # BTP region of the subaccount. Example: "eu10-canary".
   region: ""              # REQUIRED (landscape)
   # Subaccount administrators. NOTE: the provider can only set these at creation time;
@@ -91,7 +91,7 @@ crossplane:
 # (cloudLogging.saml, shootOidc) derive their URLs from it.
 # ---------------------------------------------------------------------------------------
 ias:
-  # IAS tenant hostname, e.g. "afxpmzrgq.accounts400.ondemand.com". Required whenever an
+  # IAS tenant hostname, e.g. "example.accounts.ondemand.com". Required whenever an
   # IAS-backed feature is enabled. Drives:
   #   SAML metadata_url = https://<tenantHost>/saml2/metadata
   #   SAML idp entity_id = https://<tenantHost>
@@ -115,7 +115,7 @@ cloudLogging:
     initiated: true
     roles_key: "groups"
     # IAS group mapped to OpenSearch Dashboards all_access.
-    admin_group: "CLS_Admin"
+    admin_group: "cls-admin"
     # Entity ID of the SAML application created in IAS (REQUIRED when enabled).
     spEntityId: "cls"
     # Optional: override the IdP URLs instead of deriving them from ias.tenantHost.
@@ -226,13 +226,38 @@ postgres:
   # When true, a ServiceInstance + ServiceBinding is created per shoot. When false, only the
   # entitlements are rendered (reserve quota without provisioning databases).
   createInstances: false
+  # Restrict postgres to a subset of shoots by name (must match entries in top-level shoots).
+  # Empty list = every shoot. Example: ["dev-1"].
+  shoots: []
+  # Scales both entitlement SKUs (compute + storage) per shoot for headroom. Default 1.
+  entitlementMultiplier: 1
   # Service plan: "standard" (1 vCPU:2GB) or "premium" (1 vCPU:4GB).
   plan: "standard"
   # Prefix for the per-shoot connection secret and instance/binding names.
   bindingPrefix: "postgres"
   # Provisioning parameters (see SAP help "Parameters"). SCI allows engineVersion 15 or 17.
-  memory: 2          # GB; standard plan allows 2 or 4
-  storageGB: 20      # multiple of 5
+  # RAM in GB (standard plan allows 2 or 4). The compute entitlement is counted per 2GB, so
+  # each instance consumes memory/2 compute units (2GB->1, 4GB->2); multiAz doubles it.
+  memory: 2
+  # Disk size in GB (multiple of 5). The storage entitlement is counted in 5GB blocks, so each
+  # instance consumes ceil(storageGB / 5) storage units (5GB->1, 20GB->4).
+  storageGB: 5
   engineVersion: "17"
   multiAz: false     # true doubles the compute entitlement and provisions multi-AZ
   backupRetentionDays: 3  # range 0-14
+  # Expose a public endpoint. Required true whenever allow_access is set.
+  publicAccess: true
+  # Source allowlist (BTP "allow_access"): comma-joined. Per shoot you SHOULD instead set the
+  # shoot's egress IP so each DB only admits its own shoot. Resolution order per instance:
+  #   shoots[].egressIP  ->  shoots[].egressCIDRs (joined)  ->  this global list (joined).
+  # Read a shoot's egress from its Shoot status.networking.egressCIDRs.
+  allowAccess: []
+  # PostgreSQL audit log level (list of categories, e.g. ROLE, DDL). Empty = provider default.
+  auditLogLevel:
+    - ROLE
+    - DDL
+  # Maintenance window (omit to use the service default).
+  maintenanceWindow:
+    day_of_week: Sunday
+    duration: 1
+    start_hour_utc: 4

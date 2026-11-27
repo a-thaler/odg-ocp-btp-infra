@@ -31,7 +31,7 @@ auditlog:
 # SAP Cloud Identity Services (IAS): one place for the manual tenant. The features below
 # derive their URLs from ias.tenantHost.
 ias:
-  tenantHost: "afxpmzrgq.accounts400.ondemand.com"
+  tenantHost: "example.accounts.ondemand.com"
 
 # Cloud Logging OpenSearch Dashboards SSO via IAS SAML 2.0 (OPTION 2, no secret). IdP URLs
 # are derived from ias.tenantHost; provide only the SAML app's entity id and admin group.
@@ -40,7 +40,7 @@ cloudLogging:
     enabled: true
     initiated: true
     roles_key: "groups"
-    admin_group: "CLS_Admin"
+    admin_group: "cls-admin"
     spEntityId: "cls"
 
 # OIDC access to the shoot kube-apiserver via the manual IAS tenant. Issuer is derived from

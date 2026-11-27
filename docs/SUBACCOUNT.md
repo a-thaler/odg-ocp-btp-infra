@@ -20,14 +20,70 @@ credentials the Crossplane providers use and are managed out-of-band (never in g
 
 | Secret | Key | Purpose |
 |--------|-----|---------|
-| `cis-provider-secret` | `data` | CIS credentials for the BTP provider |
-| `sa-provider-secret` | `credentials` | Service account credentials for the BTP provider |
-| `gardener-kubeconfig` | `kubeconfig` | Service account kubeconfig for the Gardener API (garden namespace) |
+| `cis-provider-secret` | `data` | CIS (Cloud Management Service) service key for the BTP provider |
+| `sa-provider-secret` | `credentials` | BTP technical user the provider authenticates as |
+| `gardener-kubeconfig` | `kubeconfig` | ServiceAccount kubeconfig for the Gardener project |
+
+### `cis-provider-secret`
+
+A service key of the subaccount's **Cloud Management Service** (`cis`), plan `local`. Its
+`data` value is the raw service-key JSON (`uaa`, `endpoints`, `grant_type`,
+`sap.cloud.service`), which is how the BTP provider calls the Cloud Management / entitlements
+APIs.
+
+1. In the subaccount, entitle **Cloud Management Service** (`cis`), plan `local`, if not
+   already present.
+2. Create an instance of `cis` / `local`, then a **service key** on it. BTP cockpit:
+   Services > Instances and Subscriptions > create the `cis local` instance, then its key.
+   CLI: `btp create services/instance --offering-name cis --plan-name local ...` then
+   `btp create services/binding ...`.
+3. Copy the full service-key JSON and store it under the `data` key (see commands below).
+
+### `sa-provider-secret`
+
+A **BTP technical (platform) user** the provider logs in with. Its `credentials` value is
+JSON with `email`, `username`, `password`. Use a dedicated service/technical account (not a
+personal login), granted the roles needed to manage the subaccount (subaccount admin /
+entitlements). Obtain it from your BTP user administration (or the shared team credential
+store) and store the three fields as JSON under the `credentials` key.
+
+### `gardener-kubeconfig`
+
+A kubeconfig for a Gardener **ServiceAccount** in the garden project that owns the shoots,
+with permission to manage `Shoot` resources (and read the `audit-policy` /
+`auditlog-credentials` objects the chart writes). The chart's Gardener `ProviderConfig`
+points the Crossplane kubernetes provider at this kubeconfig.
+
+1. In the Gardener dashboard for your project, create a **ServiceAccount** (Members >
+   Service Accounts), or use `gardenctl`/`kubectl` against the garden cluster.
+2. Download its kubeconfig. Prefer a short-lived-token kubeconfig over a static one.
+3. Store the kubeconfig verbatim under the `kubeconfig` key.
+
+### Creating the secrets
+
+From files holding each credential (keep the files out of git):
+
+```bash
+# cis-service-key.json: the full cis/local service-key JSON
+kubectl -n manual-secrets create secret generic cis-provider-secret \
+  --from-file=data=cis-service-key.json
+
+# sa-credentials.json: {"email":"...","username":"...","password":"..."}
+kubectl -n manual-secrets create secret generic sa-provider-secret \
+  --from-file=credentials=sa-credentials.json
+
+# gardener.kubeconfig: the Gardener ServiceAccount kubeconfig
+kubectl -n manual-secrets create secret generic gardener-kubeconfig \
+  --from-file=kubeconfig=gardener.kubeconfig
+```
+
+The `--from-file=<key>=<path>` form keeps the exact key names the chart's ProviderConfigs
+expect (`data`, `credentials`, `kubeconfig`).
 
 ## SAP Cloud Identity Services (IAS) tenant
 
 The IAS tenant is managed manually (not by the chart). Enter the tenant host once under
-`ias.tenantHost` (e.g. `afxpmzrgq.accounts400.ondemand.com`); it is the single source of
+`ias.tenantHost` (e.g. `example.accounts.ondemand.com`); it is the single source of
 truth for the IAS-backed features below, which derive their URLs from it:
 
 - SAML IdP metadata URL = `https://<ias.tenantHost>/saml2/metadata`
@@ -63,7 +119,7 @@ Manual setup (once per landscape):
    endpoint (HTTP-Redirect) to `https://<dashboards-endpoint>` (no trailing path). Read
    `<dashboards-endpoint>` from the `cloud-logging-credentials` secret (`dashboards-endpoint`
    key). This step can only be done after the Cloud Logging instance exists.
-4. Create the admin group (`cloudLogging.saml.admin_group`, default `CLS_Admin`) and assign
+4. Create the admin group (`cloudLogging.saml.admin_group`, default `cls-admin`) and assign
    the users who should get OpenSearch Dashboards `all_access`.
 
 Chart configuration: set `cloudLogging.saml.enabled: true` and fill in the `saml` block
@@ -130,17 +186,19 @@ SAP sizing table, not one:
 - the **compute** SKU, the chosen plan (`standard` or `premium`)
 - a separate **storage** SKU (`storage`, or `storage_ha` for multi-AZ)
 
-Units are counted **per instance**, not by disk GB (disk is an in-instance parameter set in
-5 GB blocks via `storageGB`). Compute units scale with RAM: for `standard`, each instance
-consumes `memory / 2` compute units (2 GB RAM -> 1, 4 GB RAM -> 2). Multi-AZ doubles the
-compute SKU and switches the storage SKU to `storage_ha`. The storage SKU is 1 unit per
-instance.
+Both SKUs are counted **per instance**. Compute units scale with RAM: for `standard`, each
+instance consumes `memory / 2` compute units (2 GB RAM -> 1, 4 GB RAM -> 2). The **storage**
+SKU is counted in **5 GB blocks**: each instance consumes `ceil(storageGB / 5)` storage units
+(5 GB -> 1, 20 GB -> 4). Multi-AZ doubles the compute SKU and switches the storage SKU to
+`storage_ha`.
 
-Example: two single-AZ `standard` instances at 2 GB RAM need `standard: 2` and `storage: 2`.
+Example: two single-AZ `standard` instances at 2 GB RAM and 5 GB disk need `standard: 2` and
+`storage: 2`. At 20 GB disk the same two instances need `storage: 8`.
 
 The chart's `postgres.yaml` renders both `Entitlement` objects with these amounts derived
-from `shoots`, `postgres.memory`, `postgres.plan`, and `postgres.multiAz`. The **global
-account** must hold enough quota of each SKU to assign to the subaccount, otherwise the
+from the selected shoots, `postgres.memory`, `postgres.storageGB`, `postgres.plan`,
+`postgres.multiAz`, and `postgres.entitlementMultiplier`. The **global account** must hold
+enough quota of each SKU to assign to the subaccount, otherwise the
 `Entitlement` fails to sync with a quota error (`Code 30009`). Request global-account quota
 for both the compute and storage SKUs before enabling postgres.
 
@@ -167,7 +225,7 @@ kubectl get object.kubernetes.crossplane.io shoot-<name> -o json \
   | jq -r '.status.atProvider.manifest.status.networking.egressCIDRs[]'
 ```
 
-Enter the bare IPs comma-separated, e.g. `allow_access: 10.190.102.96,10.190.101.247`.
+Enter the bare IPs comma-separated, e.g. `allow_access: 203.0.113.10,203.0.113.11`.
 
 Caveat: the correct value is the source IP **as the database sees it**. If shoot-to-database
 traffic leaves via a public NAT, the database observes that public NAT IP, not the private
