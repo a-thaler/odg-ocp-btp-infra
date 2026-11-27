@@ -227,6 +227,9 @@ postgres:
   # Provisioning parameters (see SAP help "Parameters"). SCI allows engineVersion 15 or 17.
   memory: 2          # GB; standard plan allows 2 or 4
   storageGB: 20      # multiple of 5
+  # Subaccount postgresql-db entitlement quota, in GB (the "amount" IS storage, not instance
+  # count). Leave unset to default to count(shoots) * storageGB (* 2 for multiAz).
+  storageEntitlementGB: 60
   engineVersion: "17"
   multiAz: false     # true doubles the compute entitlement and provisions multi-AZ
   backupRetentionDays: 3  # range 0-14

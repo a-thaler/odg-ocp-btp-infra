@@ -42,7 +42,7 @@ examples/
 | **Audit Log Viewer** | UI + per-user `Auditlog Viewer` role collection assignments |
 | **Cloud Logging SAML SSO** | Optional (`cloudLogging.saml.enabled`): sets SAML 2.0 parameters on the Cloud Logging instance so OpenSearch Dashboards use IAS single sign-on. The IAS tenant and SAML application are created manually; see below |
 | **Gardener ProviderConfig + RBAC** | Lets the Crossplane kubernetes provider manage Shoots and read BTP resources |
-| **Shared audit resources** | One `audit-policy` ConfigMap + `auditlog-credentials` Secret in the garden namespace |
+| **Shared audit resources** | One `audit-policy` ConfigMap + `auditlog-credentials` Secret in the garden namespace, wiring the shoots' kube-apiserver audit log (see [Gardener: Auditing Kubernetes API server](https://pages.github.tools.sap/kubernetes/gardener/docs/guides/sap-internal/cluster-operations/audit-kube-apiserver/)) |
 | **Gardener Shoot** | Kubernetes cluster on OpenStack (cilium networking) |
 | **Shoot OIDC access** | Optional (`shootOidc.enabled`): per-shoot Structured Authentication ConfigMap trusting the IAS tenant, so users access the kube-apiserver with IAS tokens; RBAC applied manually; see below |
 | **PostgreSQL per shoot** | Optional (`postgres.enabled`): one `postgresql-db` (SCI) ServiceInstance + ServiceBinding per shoot, plus the subaccount entitlement (scaled by shoot count). Connection secret `postgres-<shoot>-credentials`; see below |
@@ -165,7 +165,8 @@ The global account must have quota for the plan. `postgres.enabled: true` with a
 Provisioning parameters map to the SAP service: `memory` (GB, standard allows 2 or 4),
 `storageGB` (multiple of 5), `engineVersion` (SCI: 15 or 17), `multiAz`, and
 `backupRetentionDays` (SCI range 0 to 14). SCI does not support engine-version upgrades or
-single-AZ to multi-AZ conversion after creation.
+single-AZ to multi-AZ conversion after creation. For the full parameter reference see
+[PostgreSQL, hyperscaler option: Parameters](https://help.sap.com/docs/postgresql-on-sap-btp/postgresql-on-sap-btp-hyperscaler-option/parameters?locale=en-US).
 
 ## Prerequisites (control plane)
 

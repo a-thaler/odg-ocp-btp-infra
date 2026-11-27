@@ -8,9 +8,11 @@
 {{- $count := len $shoots }}
 {{- $computeMultiplier := ternary 2 1 $pg.multiAz }}
 # Subaccount-wide entitlement for the per-shoot PostgreSQL instances. This landscape's
-# postgresql-db offering exposes a single plan ("standard"); storage is an instance
-# parameter, not a separate entitlement SKU. Compute amount scales with shoot count
-# (doubled for multi-AZ).
+# postgresql-db offering exposes a single plan ("standard"); the entitlement "amount" is
+# denominated in storage (GB), not instance count. Default quota covers every shoot's
+# instance storage (doubled for multi-AZ); override with postgres.storageEntitlementGB.
+{{- $defaultStorageQuota := mul $count $pg.storageGB $computeMultiplier }}
+{{- $storageQuota := $pg.storageEntitlementGB | default $defaultStorageQuota }}
 apiVersion: account.btp.sap.crossplane.io/v1alpha1
 kind: Entitlement
 metadata:
@@ -19,7 +21,7 @@ spec:
   forProvider:
     serviceName: postgresql-db
     servicePlanName: {{ $pg.plan | quote }}
-    amount: {{ mul $count $computeMultiplier }}
+    amount: {{ $storageQuota }}
     subaccountRef:
       name: {{ include "odg-infra.subaccountRef" . }}
   providerConfigRef:
